@@ -15,7 +15,7 @@ benchtop/
 
 ## Conventions
 
-Pin the versions in each project's README rather than at the root, because the tools move faster than the projects do. `odctl` has shipped 18 releases and `dynamic-des` 13, several in the last month, so a single version at the root would be wrong for most directories within weeks.
+Pin the versions in each project's README rather than at the root. Each project was written and last run against the versions current at that time, and a later project does not force an older one to be retested, so no single version at the root can be true for every directory.
 
 A project that needs someone else's account says so in its first line and carries a teardown command. Most run locally and cost nothing.
 

@@ -1,0 +1,29 @@
+{
+  "files.watcherExclude": {
+    "**/venv": true
+  },
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.tabSize": 2,
+  "[python]": {
+    "editor.tabSize": 4,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "notebook.formatOnSave.enabled": true,
+  "notebook.codeActionsOnSave": {
+    "notebook.source.fixAll": "explicit",
+    "notebook.source.organizeImports": "explicit"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": null,
+    "editor.tabSize": 4,
+    "editor.detectIndentation": false
+  },
+  "python.terminal.activateEnvironment": false,
+  "terminal.integrated.suggest.enabled": false,
+  "python-envs.workspaceSearchPaths": ["./**/.venv", "./**/**/.venv"]
+}

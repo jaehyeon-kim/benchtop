@@ -1,0 +1,4 @@
+dynamic-des[iceberg]>=0.14.0
+xgboost==3.4.1
+scikit-learn==1.9.1
+pytest==9.1.1

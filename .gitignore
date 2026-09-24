@@ -1,8 +1,25 @@
 .ignore
 
+# OS and editors
 .DS_Store
+.idea/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments and secrets
 .venv/
 venv/
 .env
+
+# Tool caches and reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/

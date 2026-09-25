@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from xgboost import XGBRegressor
 
-from airq.generator import Observation
+from airq.models import Observation
 
 
 def test_same_seed_gives_the_same_rows(simulate):
@@ -21,9 +21,9 @@ def test_v2_beats_v1_beats_predicting_yesterday(simulate):
     pm, weather = defaultdict(list), defaultdict(list)
     for row in simulate(days=720):
         if isinstance(row, Observation):
-            pm[row.event_time.date()].append(row.pm2_5)
+            pm[row.measured_at.date()].append(row.pm2_5)
         elif row.lead_days == 1:
-            weather[row.event_time.date()].append(row)
+            weather[row.forecast_for.date()].append(row)
     days = sorted(d for d in pm if len(weather[d]) == 24)
     w = np.array(
         [

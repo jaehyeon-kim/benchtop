@@ -1,20 +1,22 @@
 """Iceberg: the catalog, the tables, and their schemas derived from the pydantic models."""
 
-import os
+from datetime import date
 
 import pyarrow as pa
 from pydantic import AwareDatetime, BaseModel
-from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog import Catalog, load_catalog
 
-from airq.generator import Observation, WeatherForecast
+from airq.config import CATALOG, NAMESPACE, TABLES
 
-NAMESPACE = "airq"
-TABLES = {
-    Observation: f"{NAMESPACE}.observations",
-    WeatherForecast: f"{NAMESPACE}.weather_forecasts",
-}
 _TS = pa.timestamp("us", tz="UTC")
-_ARROW = {str: pa.string(), float: pa.float64(), int: pa.int32(), AwareDatetime: _TS}
+_ARROW = {
+    str: pa.string(),
+    float: pa.float64(),
+    int: pa.int32(),
+    bool: pa.bool_(),
+    date: pa.date32(),
+    AwareDatetime: _TS,
+}
 
 
 def arrow_schema(model: type[BaseModel]) -> pa.Schema:
@@ -25,26 +27,20 @@ def arrow_schema(model: type[BaseModel]) -> pa.Schema:
     )
 
 
-def catalog() -> RestCatalog:
-    """Iceberg REST catalog. Defaults reach the odctl `catalog` profile from the
-    host; inside an odctl container set ICEBERG_URI=http://catalog:8181 and
-    S3_ENDPOINT=http://seaweed:8333. The rest is fixed by odctl."""
-    return RestCatalog(
-        "odctl",
-        **{
-            "uri": os.getenv("ICEBERG_URI", "http://localhost:8181"),
-            "warehouse": "s3://warehouse/",
-            "s3.endpoint": os.getenv("S3_ENDPOINT", "http://localhost:8333"),
-            "s3.access-key-id": "user",
-            "s3.secret-access-key": "password",
-            "s3.region": "us-east-1",
-        },
-    )
+def catalog() -> Catalog:
+    """The Iceberg REST catalog, configured by the PYICEBERG_CATALOG__ODCTL__* variables."""
+    return load_catalog(CATALOG)
 
 
-def recreate_tables(cat) -> None:
+def recreate_tables(cat, properties: dict[str, str]) -> None:
     cat.create_namespace_if_not_exists(NAMESPACE)
     for model, identifier in TABLES.items():
         if cat.table_exists(identifier):
             cat.drop_table(identifier)
-        cat.create_table(identifier, schema=arrow_schema(model))
+        cat.create_table(identifier, schema=arrow_schema(model), properties=properties)
+
+
+def to_arrow(model: type[BaseModel], rows: list[BaseModel]) -> pa.Table:
+    return pa.Table.from_pylist(
+        [r.model_dump() for r in rows], schema=arrow_schema(model)
+    )

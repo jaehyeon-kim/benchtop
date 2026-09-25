@@ -1,7 +1,8 @@
 import pyarrow as pa
 
-from airq.generator import Observation
-from airq.iceberg import TABLES, arrow_schema
+from airq.config import TABLES
+from airq.iceberg import arrow_schema
+from airq.models import Observation
 
 
 def test_schema_matches_each_model():
@@ -10,6 +11,6 @@ def test_schema_matches_each_model():
         schema = arrow_schema(model)
         assert schema.names == list(model.model_fields)
         assert not any(field.nullable for field in schema)
-    assert arrow_schema(Observation).field("event_time").type == pa.timestamp(
+    assert arrow_schema(Observation).field("measured_at").type == pa.timestamp(
         "us", tz="UTC"
     )

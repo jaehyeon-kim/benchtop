@@ -8,6 +8,8 @@ does nothing, because odctl sets the container addresses there.
 
 import os
 
+from pydantic import BaseModel
+
 from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 
 if not os.path.exists("/.dockerenv"):  # Docker creates this file in every container
@@ -36,7 +38,7 @@ LEADS = range(1, 8)  # forecast lead times, in days
 
 NAMESPACE = "airq"
 # The feature pipeline's tables; the backfill recreates exactly these.
-TABLES = {
+TABLES: dict[type[BaseModel], str] = {
     Observation: f"{NAMESPACE}.observations",
     WeatherForecast: f"{NAMESPACE}.weather_forecasts",
     DailyWeather: f"{NAMESPACE}.daily_weather",
@@ -49,7 +51,19 @@ ORIGIN_PROPERTY = "airq.origin"
 SEED_PROPERTY = "airq.seed"
 
 FEAST_PROJECT = "airq"
+EXPERIMENT = "airq"  # MLflow experiment of the sweep and training runs
 MODEL_NAME = "airq_pm25"  # registered model in MLflow
-CHAMPION = "champion"  # alias of the version inference loads
+CHAMPION = "champion"  # alias of the version inference serves
+CHALLENGER = "challenger"  # alias of the version inference predicts beside it
 # Airflow asset the daily run updates and the inference DAG is scheduled on.
 DAILY_FEATURES_ASSET = "airq_daily_features"
+# Airflow asset training updates; the inference DAG is scheduled on it too.
+MODELS_ASSET = "airq_models"
+
+# The forecast assistant's model: an Ollama model that supports tool calls,
+# pulled into the local Ollama server. Nothing is sent to a hosted model. The
+# instruct variant answers straight away; plain qwen3:4b reasons first and is
+# several times slower.
+ASSISTANT_MODEL = os.environ.get("AIRQ_MODEL", "qwen3:4b-instruct")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+APP_PORT = 8090  # the NiceGUI app, airq.app

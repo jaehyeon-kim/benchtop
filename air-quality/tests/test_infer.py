@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import pandas as pd
 
 from airq.config import LEADS, STATION
-from airq.infer import _entity_rows, _errors, _predictions
+from airq.infer import _entity_rows, _predictions, errors
 
 
 def test_entity_rows_ask_for_the_forecast_issued_on_the_as_of_date():
@@ -35,6 +35,6 @@ def test_errors_cover_only_days_with_a_reading():
     observed = pd.DataFrame(
         {"location_id": [STATION], "day": [date(2026, 9, 21)], "pm2_5": [13.0]}
     )
-    errors = _errors(predictions, observed)
-    assert list(errors.lead_days) == [1]
-    assert errors.abs_error.iloc[0] == 3.0
+    joined = errors(predictions, observed)
+    assert list(joined.lead_days) == [1]
+    assert joined.abs_error.iloc[0] == 3.0

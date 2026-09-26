@@ -13,6 +13,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from dynamic_des import IcebergStorageEgress, SimulationContext
+from pydantic import BaseModel
 
 from airq.config import DEFAULT_SEED, ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
 from airq.features import daily_features
@@ -73,9 +74,12 @@ def backfill(n_days: int = 730, seed: int = DEFAULT_SEED) -> None:
     )
     app.run(until=(end - origin).total_seconds())
 
-    for model, rows in zip(
-        (DailyWeather, DailyAirQuality), daily_features(forecasts, observations)
-    ):
+    weather, air_quality = daily_features(forecasts, observations)
+    daily: list[tuple[type[BaseModel], list]] = [
+        (DailyWeather, weather),
+        (DailyAirQuality, air_quality),
+    ]
+    for model, rows in daily:
         cat.load_table(TABLES[model]).append(to_arrow(model, rows))
     for identifier in TABLES.values():
         logger.info(

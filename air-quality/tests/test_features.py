@@ -8,7 +8,9 @@ from tests.conftest import ORIGIN
 
 
 def test_daily_run_writes_what_the_backfill_writes(simulate):
-    """The daily run for a day equals the backfill's rows for that day."""
+    """The daily run's rows for a day equal the feature code's rows for that day
+    over the whole generated span, which the backfill writes. The backfill's
+    Iceberg writing itself is not run here."""
     rows = simulate(days=6)
     forecasts = [r for r in rows if isinstance(r, WeatherForecast)]
     observations = [r for r in rows if isinstance(r, Observation)]

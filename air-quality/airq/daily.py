@@ -7,7 +7,7 @@ no longer continue from the days the backfill wrote. The day it keeps: the forec
 weather issued on it and its air quality. Each table gets one overwrite filtered
 to the day, a delete and an insert in one commit, so a rerun replaces the day.
 
-Run: python -m airq.daily --date 2026-09-24 --seed 42   (defaults: yesterday, UTC, and the backfill's seed)
+Run: python -m airq.daily --date "3 days ago" --seed 42   (defaults: yesterday, UTC, and the backfill's seed)
 """
 
 import argparse
@@ -16,6 +16,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from pydantic import BaseModel
 
+from airq import days
 from airq.config import ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
 from airq.features import DAY_COLUMN, daily_features, in_window
 from airq.generator import generate
@@ -52,6 +53,8 @@ def day_rows(
 
 def run(day: date, seed: int | None = None) -> None:
     cat = catalog()
+    if not cat.table_exists(TABLES[Observation]):
+        raise SystemExit("There are no tables yet: run the backfill first.")
     properties = cat.load_table(TABLES[Observation]).properties
     if ORIGIN_PROPERTY not in properties:
         raise SystemExit("The tables have no origin: run the backfill first.")
@@ -76,9 +79,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--date",
-        type=date.fromisoformat,
-        default=datetime.now(UTC).date() - timedelta(days=1),
-        help="day to load, YYYY-MM-DD (default: yesterday, UTC)",
+        type=days.argument,
+        default="yesterday",
+        help=f"day to load: {days.FORMS} (default: yesterday, UTC)",
     )
     parser.add_argument(
         "--seed",

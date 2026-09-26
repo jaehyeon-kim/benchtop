@@ -7,7 +7,7 @@ The `airq` package is uploaded beside this file, and dynamic-des is installed
 through `_AIRFLOW_PIP_DEPS`.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from airflow.sdk import Asset, Param, dag, task
 
@@ -39,7 +39,7 @@ def airq_backfill():
     start_date=datetime(2026, 9, 1, tzinfo=UTC),
     catchup=False,
     params={
-        "date": Param(None, type=["null", "string"], format="date", description="day to load; empty loads the day before the run"),
+        "date": Param(None, type=["null", "string"], description='day to load, such as "3 days ago" or YYYY-MM-DD; empty loads the day before the run'),
         "seed": Param(None, type=["null", "integer"], description="seed; empty uses the backfill's"),
     },
     tags=["airq"],
@@ -49,9 +49,10 @@ def airq_daily():
     @task(outlets=[_DAILY_FEATURES])
     def daily(params=None, dag_run=None, outlet_events=None):
         from airq.daily import run
+        from airq.days import resolve
 
         yesterday = (dag_run.run_after - timedelta(days=1)).date()
-        day = date.fromisoformat(params["date"]) if params["date"] else yesterday
+        day = resolve(params["date"]) if params["date"] else yesterday
         run(day, params["seed"])
         outlet_events[_DAILY_FEATURES].extra = {"day": day.isoformat()}
 

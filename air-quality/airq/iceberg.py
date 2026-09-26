@@ -6,7 +6,7 @@ import pyarrow as pa
 from pydantic import AwareDatetime, BaseModel
 from pyiceberg.catalog import Catalog, load_catalog
 
-from airq.config import CATALOG, NAMESPACE, TABLES
+from airq.config import CATALOG, NAMESPACE, PREDICTIONS, TABLES
 
 _TS = pa.timestamp("us", tz="UTC")
 _ARROW = {
@@ -33,7 +33,11 @@ def catalog() -> Catalog:
 
 
 def recreate_tables(cat, properties: dict[str, str]) -> None:
+    """Drops and recreates the feature pipeline's tables, and drops the
+    predictions, which were made from the data being replaced."""
     cat.create_namespace_if_not_exists(NAMESPACE)
+    if cat.table_exists(PREDICTIONS):
+        cat.drop_table(PREDICTIONS)
     for model, identifier in TABLES.items():
         if cat.table_exists(identifier):
             cat.drop_table(identifier)

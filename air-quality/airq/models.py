@@ -7,11 +7,18 @@ derived from these models, and the generator and the feature code build them.
 - DailyWeather: one day's forecast weather at one lead.
 - DailyAirQuality: one day's mean PM2.5, the target, with its daily features.
 - Prediction: one day's predicted PM2.5, from a run for an as-of date.
+
+Value bounds validate every row as it is built, before anything is written, in
+place of the book's Great Expectations suites: PM2.5 between 0 and 500 as in the
+book, and physically possible weather.
 """
 
 from datetime import date
 
-from pydantic import AwareDatetime, BaseModel
+from pydantic import AwareDatetime, BaseModel, Field
+
+_PM2_5 = Field(ge=0, le=500)  # µg/m³, the book's expectation
+_LEAD = Field(ge=1, le=7)  # days
 
 
 class Observation(BaseModel):
@@ -19,7 +26,7 @@ class Observation(BaseModel):
 
     location_id: str
     measured_at: AwareDatetime
-    pm2_5: float
+    pm2_5: float = _PM2_5
     ingested_at: AwareDatetime
 
 
@@ -29,11 +36,11 @@ class WeatherForecast(BaseModel):
     location_id: str
     forecast_for: AwareDatetime
     issued_at: AwareDatetime
-    lead_days: int
-    temperature_2m: float
-    precipitation: float
-    wind_speed_10m: float
-    wind_direction_10m: float
+    lead_days: int = _LEAD
+    temperature_2m: float = Field(ge=-60, le=60)  # °C
+    precipitation: float = Field(ge=0, le=500)  # mm in an hour
+    wind_speed_10m: float = Field(ge=0, le=400)  # km/h
+    wind_direction_10m: float = Field(ge=0, lt=360)  # degrees
     ingested_at: AwareDatetime
 
 
@@ -42,11 +49,11 @@ class DailyWeather(BaseModel):
 
     location_id: str
     day: date
-    lead_days: int
+    lead_days: int = _LEAD
     issued_on: date
-    temperature_2m: float
-    wind_speed_10m: float
-    wet_hours: int
+    temperature_2m: float = Field(ge=-60, le=60)
+    wind_speed_10m: float = Field(ge=0, le=400)
+    wet_hours: int = Field(ge=0, le=24)
 
 
 class DailyAirQuality(BaseModel):
@@ -54,9 +61,9 @@ class DailyAirQuality(BaseModel):
 
     location_id: str
     day: date
-    pm2_5: float
+    pm2_5: float = _PM2_5
     is_weekend: bool
-    pm2_5_lag1: float
+    pm2_5_lag1: float = _PM2_5
 
 
 class Prediction(BaseModel):
@@ -65,6 +72,6 @@ class Prediction(BaseModel):
     location_id: str
     as_of: date
     day: date
-    lead_days: int
+    lead_days: int = _LEAD
     pm2_5: float
     model_version: str

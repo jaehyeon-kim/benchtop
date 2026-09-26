@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # The draw.io app saves diagrams without a trailing newline, so these two
+      # hooks would fail on every saved diagram.
+      - id: trailing-whitespace
+        exclude: \.drawio$
+      - id: end-of-file-fixer
+        exclude: \.drawio$
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Match the ruff version used locally (uvx ruff@0.16.9); two versions of the
+    # formatter disagree and the diff flaps.
+    rev: v0.16.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports]

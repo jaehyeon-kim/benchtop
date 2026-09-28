@@ -23,23 +23,32 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
 
-  # The air-quality unit tests. They need none of the odctl services.
-  air-quality-unit-test:
+  # Each project's unit tests, in parallel once lint passes. They need none of the
+  # odctl services. Add a project to the matrix when it gets a tests folder.
+  unit-test:
+    needs: lint
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: air-quality
+            python: "3.13"
+    name: unit-test (${{ matrix.project }})
     defaults:
       run:
-        working-directory: air-quality
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv and Python 3.13
+      - name: Install uv and Python ${{ matrix.python }}
         uses: astral-sh/setup-uv@v10.2.0
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
           activate-environment: true
-          working-directory: air-quality
+          working-directory: ${{ matrix.project }}
           enable-cache: true
-          cache-dependency-glob: air-quality/requirements.txt
+          cache-dependency-glob: ${{ matrix.project }}/requirements.txt
 
       - name: Install dependencies
         run: uv pip install -r requirements.txt

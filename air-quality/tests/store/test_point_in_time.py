@@ -7,7 +7,7 @@ import pandas as pd
 from feast import FeatureStore, FeatureView, FileSource, RepoConfig
 
 from airq.config import STATION
-from airq.feast_repo import lead, station, weather_v1
+from airq.store.feast_repo import lead, station, weather_v1
 
 
 def _day(d: int) -> datetime:
@@ -15,6 +15,7 @@ def _day(d: int) -> datetime:
 
 
 def test_each_request_gets_the_forecast_for_its_own_day_and_lead(tmp_path):
+    """Verify that Feast returns the forecast for the requested day and lead, and nothing when that row is missing."""
     rows = pd.DataFrame(
         {"location_id": STATION,
          "day": [_day(21), _day(22), _day(22), _day(23)],

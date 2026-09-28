@@ -1,20 +1,19 @@
-"""Feast definitions: the station and lead entities, the v1 weather view and the
-v2 calendar view.
+"""Defines the Feast entities and feature views that training and inference read.
 
-The feature store reads `daily_weather` as the feature pipeline wrote it, so
-training and inference get the same values. A row for (day, lead) is the
-forecast for that day issued `lead_days` before it. Training asks for lead 1;
-inference standing on day D asks for lead N on day D+N.
+The station and lead entities identify a row. The v1 view, `weather_v1`, reads the
+weather features from `daily_weather`. A row for (day, lead) is the forecast for that
+day, issued `lead_days` before it. Training asks for lead 1. Inference on day D asks for
+lead N on day D+N.
 
-v2 adds the weekend flag, chosen by the feature sweep (airq.sweep). It is known
-for any day, including the future days inference predicts, which have no row in
-`daily_air_quality` yet. So it is an on-demand view computed from the `day` each
-request names, not a view over that table.
+The v2 view, `calendar_v2`, adds the weekend flag, which the feature sweep chose.
+Inference needs the flag for future days, which have no row in `daily_air_quality` yet.
+So `calendar_v2` is an on-demand view that computes the flag from the `day` each request
+names.
 
-The registry is in PostgreSQL, where the Feast UI reads it. There is no online
-store, because nothing is served online.
+The registry is in PostgreSQL, where the Feast UI reads it. There is no online store,
+because nothing is served online.
 
-Run once after changing a definition: python -m airq.feast_repo
+Run after changing a definition: python -m airq.store
 """
 
 import os
@@ -78,6 +77,15 @@ calendar = RequestSource(
     sources=[calendar], schema=[Field(name="is_weekend", dtype=Int64)], mode="pandas"
 )
 def calendar_v2(inputs: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes the weekend flag for each requested day.
+
+    Args:
+        inputs (pd.DataFrame): The request rows, with the `day` each one is for.
+
+    Returns:
+        pd.DataFrame: An `is_weekend` column: 1 for a Saturday or Sunday, otherwise 0.
+    """
     return pd.DataFrame({"is_weekend": (inputs["day"].dt.weekday >= 5).astype("int64")})
 
 
@@ -93,6 +101,18 @@ FEATURE_SETS = {
 
 
 def store() -> FeatureStore:
+    """
+    Returns the Feast feature store of the `airq` project.
+
+    The offline store is DuckDB, and there is no online store.
+
+    Returns:
+        FeatureStore: The store, with its registry in the PostgreSQL database that
+            `FEAST_REGISTRY` names.
+
+    Raises:
+        KeyError: If `FEAST_REGISTRY` is not set.
+    """
     return FeatureStore(
         config=RepoConfig(
             project=FEAST_PROJECT,

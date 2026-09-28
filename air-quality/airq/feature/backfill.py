@@ -1,11 +1,13 @@
-"""Backfill: the last `n_days` of simulated history, up to the end of yesterday, into Iceberg.
+"""Writes the last `n_days` of simulated history to the Iceberg tables.
 
-Each run drops and recreates the four tables. The generation starts `n_days`
-before today with `seed`, and both are stored as table properties for the daily
-run. The hourly rows go through dynamic-des; the daily features are computed
-from the same rows and written with PyIceberg.
+Each run drops and recreates the four tables. The history starts `n_days` before today
+and ends at the end of yesterday, UTC. The first hour and `seed` are stored as table
+properties, so the daily run can continue the same data.
 
-Run: python -m airq.backfill --n-days 730 --seed 42
+The hourly rows are published through dynamic-des, which writes them to Iceberg. The
+daily features are computed from the same rows and written with PyIceberg.
+
+Run: python -m airq.feature.backfill --n-days 730 --seed 42
 """
 
 import argparse
@@ -16,12 +18,14 @@ from dynamic_des import IcebergStorageEgress, SimulationContext
 from pydantic import BaseModel
 
 from airq.config import DEFAULT_SEED, ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
-from airq.features import daily_features
-from airq.generator import generate
+from airq.feature.features import daily_features
+from airq.feature.generator import generate
 from airq.iceberg import catalog, recreate_tables, to_arrow
 from airq.models import DailyAirQuality, DailyWeather
 
-logger = logging.getLogger("airq.backfill")  # __name__ is "__main__" under python -m
+logger = logging.getLogger(
+    "airq.feature.backfill"
+)  # __name__ is "__main__" under python -m
 
 _MODELS = {model.__name__: model for model in TABLES}
 
@@ -29,11 +33,19 @@ _HOUR = 3600.0
 
 
 def route(r: dict) -> str:
-    """Turns a published event back into its model's row.
+    """
+    Returns the table for a published event, and turns the event back into a row.
 
-    dynamic-des serialises the model with model_dump(mode="json"), so timestamps
-    arrive as ISO strings; validating restores them to datetimes. The row replaces
-    the record in place because the egress writes the dict the router was given.
+    dynamic-des publishes each row as `model_dump(mode="json")`, so its timestamps
+    arrive as strings. Validating the row with its model turns them back into datetimes.
+    The row replaces the contents of `r`, because the egress writes the same dict it
+    passes here.
+
+    Args:
+        r (dict): The published event. `key` holds the model name and `value` the row.
+
+    Returns:
+        str: The identifier of the Iceberg table the row belongs to.
     """
     model = _MODELS[r["key"]]
     row = model.model_validate(r["value"]).model_dump()
@@ -43,6 +55,17 @@ def route(r: dict) -> str:
 
 
 def backfill(n_days: int = 730, seed: int = DEFAULT_SEED) -> None:
+    """
+    Recreates the tables and writes `n_days` of generated history to them.
+
+    The hourly forecasts and readings go through a dynamic-des simulation, one simulated
+    hour at a time, and are written in one Iceberg commit per table. The daily weather
+    and air quality rows are then computed from the same hourly rows and appended.
+
+    Args:
+        n_days (int): How many days to write, ending with yesterday.
+        seed (int): The seed for the generated values.
+    """
     end = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     origin = end - timedelta(days=n_days)
     cat = catalog()

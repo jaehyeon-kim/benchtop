@@ -1,11 +1,11 @@
-"""Daily features: the hourly rows turned into the daily tables Feast reads.
+"""Turns the hourly rows into the daily rows that Feast reads.
 
-DailyWeather averages the 24 hourly forecasts for a day issued `lead_days`
-before it. DailyAirQuality averages the day's PM2.5 and adds the weekend flag and
-the previous day's mean.
+A DailyWeather row averages the 24 hourly forecasts for one day, issued `lead_days`
+before it. A DailyAirQuality row averages the day's 24 PM2.5 readings, and adds the
+weekend flag and the previous day's mean.
 
-The backfill and the daily run both call `daily_features` and `in_window`, so
-the two write the same rows for the same day.
+The backfill and the daily run both call `daily_features` and `in_window`, so they write
+the same rows for the same day.
 """
 
 from collections import defaultdict
@@ -27,7 +27,20 @@ DAY_COLUMN = {
 
 
 def in_window(row: BaseModel, start: datetime, end: datetime) -> bool:
-    """Whether the row's day column falls in [start, end)."""
+    """
+    Returns whether a row falls between `start` and `end`.
+
+    The row's day column, from `DAY_COLUMN`, decides. Timestamps are compared as they
+    are, and dates are compared with the dates of `start` and `end`.
+
+    Args:
+        row (BaseModel): A row of any of the four tables.
+        start (datetime): The start of the window, included.
+        end (datetime): The end of the window, excluded.
+
+    Returns:
+        bool: Whether the row falls in the window.
+    """
     value = getattr(row, DAY_COLUMN[type(row)])
     if isinstance(value, datetime):
         return start <= value < end
@@ -37,7 +50,21 @@ def in_window(row: BaseModel, start: datetime, end: datetime) -> bool:
 def daily_features(
     forecasts: list[WeatherForecast], observations: list[Observation]
 ) -> tuple[list[DailyWeather], list[DailyAirQuality]]:
-    """Daily rows for every day with all 24 hours; a day also needs the day before for its lag."""
+    """
+    Returns the daily weather and air quality rows computed from hourly rows.
+
+    A day and lead get a weather row only when all 24 hourly forecasts are present. A
+    day gets an air quality row only when it and the day before both have all 24
+    readings, because the row holds the previous day's mean.
+
+    Args:
+        forecasts (list[WeatherForecast]): The hourly weather forecasts.
+        observations (list[Observation]): The hourly PM2.5 readings.
+
+    Returns:
+        tuple[list[DailyWeather], list[DailyAirQuality]]: The daily weather rows, then
+            the daily air quality rows, both sorted by day.
+    """
     weather = defaultdict(list)
     for row in forecasts:
         weather[row.forecast_for.date(), row.lead_days].append(row)

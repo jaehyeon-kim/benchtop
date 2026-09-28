@@ -1,16 +1,14 @@
 from datetime import UTC, datetime, time, timedelta
 
 from airq.config import DEFAULT_SEED, STATION
-from airq.daily import day_rows
-from airq.features import daily_features, in_window
+from airq.feature.daily import day_rows
+from airq.feature.features import daily_features, in_window
 from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 from tests.conftest import ORIGIN
 
 
 def test_daily_run_writes_what_the_backfill_writes(simulate):
-    """The daily run's rows for a day equal the feature code's rows for that day
-    over the whole generated span, which the backfill writes. The backfill's
-    Iceberg writing itself is not run here."""
+    """Verify that the daily run's rows for a day equal the backfill's rows for that day."""
     rows = simulate(days=6)
     forecasts = [r for r in rows if isinstance(r, WeatherForecast)]
     observations = [r for r in rows if isinstance(r, Observation)]
@@ -32,6 +30,7 @@ def test_daily_run_writes_what_the_backfill_writes(simulate):
 
 
 def test_daily_features_average_complete_days():
+    """Verify that the daily features average a complete day and use the day before for the previous day's mean."""
     day = datetime(2026, 9, 5, tzinfo=UTC)  # a Saturday
     observations = [
         Observation(location_id=STATION, measured_at=day + timedelta(hours=h),

@@ -1,12 +1,11 @@
-"""Inference pipeline DAG.
+"""Defines the inference pipeline DAG.
 
-- airq_inference: runs each time airq_daily loads a day, and predicts the seven
-  days after that day. Airflow may combine several daily runs into one inference
-  run, so it predicts for every day they loaded. It also runs after airq_training,
-  for the day before, so newly registered versions have a forecast. A manual run
-  can name the as-of date.
+- airq_inference: runs each time airq_daily loads a day, and predicts the seven days
+  after that day. Airflow may combine several daily runs into one inference run. That
+  run then predicts for every day they loaded. It also runs after airq_training, for the
+  day before, so the new versions have a forecast. A manual run can name the as-of date.
 
-The `airq` package is uploaded beside this file.
+The `airq` package is uploaded next to this file.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -30,7 +29,7 @@ def airq_inference():
     @task
     def infer(params=None, dag_run=None, triggering_asset_events=None):
         from airq.days import resolve
-        from airq.infer import run
+        from airq.inference.infer import run
 
         yesterday = (dag_run.run_after - timedelta(days=1)).date()
         if params["as_of"]:

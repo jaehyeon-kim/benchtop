@@ -1,9 +1,9 @@
-"""Settings shared by the pipelines and the tests.
+"""Settings shared by the pipelines, the app and the tests.
 
-On the terminal, the block below points the code at the odctl services as seen
-from the host, as 127.0.0.1 rather than localhost: with IPv6 enabled in Docker,
-some services reset connections to the IPv6 localhost. Inside a container it
-does nothing, because odctl sets the container addresses there.
+On the host, importing this module sets environment variables that point the code at the
+odctl services on 127.0.0.1. It avoids localhost, because with IPv6 enabled in Docker
+some services reset connections to the IPv6 address of localhost. Inside a container it
+changes nothing, because odctl already sets the container addresses there.
 """
 
 import os

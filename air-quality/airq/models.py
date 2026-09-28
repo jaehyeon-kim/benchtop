@@ -1,28 +1,28 @@
-"""The four Iceberg tables' rows, one pydantic model each. The Iceberg schemas are
-derived from these models, and the generator and the feature code build them.
+"""Pydantic models for the rows of the Iceberg tables, one model per table.
 
-- Observation: the PM2.5 measured in an hour.
-- WeatherForecast: the weather forecast for an hour, made 1 to 7 days before it.
-  `forecast_for` is the hour being forecast, `issued_at` is when it was made.
-- DailyWeather: one day's forecast weather at one lead.
-- DailyAirQuality: one day's mean PM2.5, the target, with its daily features.
-- Prediction: one day's predicted PM2.5, from a run for an as-of date.
-
-Value bounds validate every row as it is built, before anything is written, in
-place of the book's Great Expectations suites: PM2.5 between 0 and 500 as in the
-book, and physically possible weather.
+The Iceberg schemas are derived from these models, and the generator and the feature
+code build rows with them. The bounds on the fields check every row when it is built,
+before anything is written.
 """
 
 from datetime import date
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-_PM2_5 = Field(ge=0, le=500)  # µg/m³, the book's expectation
+_PM2_5 = Field(ge=0, le=500)  # µg/m³
 _LEAD = Field(ge=1, le=7)  # days
 
 
 class Observation(BaseModel):
-    """One hour of measured PM2.5 at one station."""
+    """
+    One hour of measured PM2.5 at one station.
+
+    Attributes:
+        location_id (str): The station.
+        measured_at (AwareDatetime): The start of the hour measured.
+        pm2_5 (float): The measured PM2.5 in µg/m³, from 0 to 500.
+        ingested_at (AwareDatetime): When the reading arrived, at the end of the hour.
+    """
 
     location_id: str
     measured_at: AwareDatetime
@@ -31,7 +31,25 @@ class Observation(BaseModel):
 
 
 class WeatherForecast(BaseModel):
-    """Weather forecast for one hour, as issued `lead_days` before that hour."""
+    """
+    The weather forecast for one hour, issued `lead_days` before that hour.
+
+    Attributes:
+        location_id (str): The station.
+        forecast_for (AwareDatetime): The hour being forecast.
+        issued_at (AwareDatetime): When the forecast was made.
+        lead_days (int): How many days before `forecast_for` the forecast was made, from
+            1 to 7.
+        temperature_2m (float): The air temperature 2 metres above the ground in °C,
+            from -60 to 60.
+        precipitation (float): The rain in the hour in mm, from 0 to 500.
+        wind_speed_10m (float): The wind speed 10 metres above the ground in km/h, from
+            0 to 400.
+        wind_direction_10m (float): The wind direction in degrees, from 0 up to but not
+            including 360.
+        ingested_at (AwareDatetime): When the forecast arrived, which is when it was
+            made.
+    """
 
     location_id: str
     forecast_for: AwareDatetime
@@ -45,7 +63,20 @@ class WeatherForecast(BaseModel):
 
 
 class DailyWeather(BaseModel):
-    """Forecast weather for one day, as issued `lead_days` before it."""
+    """
+    The forecast weather for one day, issued `lead_days` before it.
+
+    Attributes:
+        location_id (str): The station.
+        day (date): The day forecast.
+        lead_days (int): How many days before `day` the forecast was made, from 1 to 7.
+        issued_on (date): The day the forecast was made.
+        temperature_2m (float): The mean of the day's 24 hourly temperatures in °C, from
+            -60 to 60.
+        wind_speed_10m (float): The mean of the day's 24 hourly wind speeds in km/h,
+            from 0 to 400.
+        wet_hours (int): The number of hours with any rain, from 0 to 24.
+    """
 
     location_id: str
     day: date
@@ -57,7 +88,18 @@ class DailyWeather(BaseModel):
 
 
 class DailyAirQuality(BaseModel):
-    """Measured PM2.5 for one day, with the features known from the date and the day before."""
+    """
+    The measured PM2.5 for one day, with the features known from the date and the day
+    before.
+
+    Attributes:
+        location_id (str): The station.
+        day (date): The day measured.
+        pm2_5 (float): The mean of the day's 24 hourly readings in µg/m³, from 0 to 500.
+            This is the target the models predict.
+        is_weekend (bool): Whether the day is a Saturday or Sunday.
+        pm2_5_lag1 (float): The mean PM2.5 of the day before in µg/m³, from 0 to 500.
+    """
 
     location_id: str
     day: date
@@ -67,7 +109,17 @@ class DailyAirQuality(BaseModel):
 
 
 class Prediction(BaseModel):
-    """Predicted PM2.5 for one day, made by a run standing on `as_of`."""
+    """
+    The predicted PM2.5 for one day, from one model version.
+
+    Attributes:
+        location_id (str): The station.
+        as_of (date): The date the inference run treated as today.
+        day (date): The day predicted.
+        lead_days (int): How many days after `as_of` the day is, from 1 to 7.
+        pm2_5 (float): The predicted daily mean PM2.5 in µg/m³.
+        model_version (str): The MLflow model version that made the prediction.
+    """
 
     location_id: str
     as_of: date

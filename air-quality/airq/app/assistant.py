@@ -1,14 +1,14 @@
-"""Forecast assistant: a Strands agent answering questions about the PM2.5 forecast.
-The app's Assistant tab (airq.app) chats with it.
+"""Forecast assistant: a Strands agent that answers questions about the PM2.5 forecast.
 
-Three tools, over the same queries the Monitoring tab draws from: `get_forecast`,
-`get_observed` and `get_model_error`. The model is a local Ollama model, named
-by `AIRQ_MODEL`, so nothing leaves the machine.
+The Assistant tab in `airq.app.ui` chats with it. The model runs locally in Ollama,
+and `AIRQ_MODEL` names it, so no data leaves the machine.
 
-The tools are built for a small model. They take days in the user's own words
-("tomorrow", "3 days ago", "saturday") and work out the date in Python, and they
-return a few short lines with any comparison already made, so the model only
-copies numbers.
+The agent has three tools: `get_forecast`, `get_observed` and `get_model_error`.
+They use the same queries as the Monitoring tab, so the answers match the charts.
+
+The tools are written for a small model. They accept days in the user's own words,
+such as "tomorrow" or "saturday", and work out the date in Python. They return a
+few short lines with any comparison already made, so the model only copies numbers.
 """
 
 from datetime import date
@@ -16,7 +16,7 @@ from datetime import date
 from strands import Agent, tool
 from strands.models.ollama import OllamaModel
 
-from airq import reports
+from airq.app import reports
 from airq.config import ASSISTANT_MODEL, CHALLENGER, CHAMPION, OLLAMA_HOST
 from airq.days import FORMS, WEEKDAYS, resolve
 from airq.days import today as utc_today
@@ -36,10 +36,34 @@ air quality station. Today is {today} ({weekday}, UTC). PM2.5 is in µg/m³.
 
 
 def _label(day: date) -> str:
+    """
+    Formats a day for the model, with its weekday.
+
+    Args:
+        day (date): The day to format.
+
+    Returns:
+        str: The date and its weekday, such as "2026-09-26 (Saturday)".
+    """
     return f"{day.isoformat()} ({WEEKDAYS[day.weekday()].capitalize()})"
 
 
 def forecast_text(day: str, model: str, today: date) -> str:
+    """
+    Describes the latest forecast of one model, for one day or for all seven days.
+
+    Args:
+        day (str): The day predicted, in the user's words. Empty for all seven days.
+        model (str): The alias of the model, "champion" or "challenger".
+        today (date): The date that phrases such as "tomorrow" count from.
+
+    Returns:
+        str: A heading with the model version and forecast date, then one line per
+            day. If the forecast does not cover `day`, the days it does cover.
+
+    Raises:
+        ValueError: If `day` cannot be read as a day.
+    """
     rows = reports.forecast(today)
     rows = rows[rows["alias"] == model] if not rows.empty else rows
     if rows.empty:
@@ -56,6 +80,24 @@ def forecast_text(day: str, model: str, today: date) -> str:
 
 
 def observed_text(day: str, until: str, today: date) -> str:
+    """
+    Describes the measured daily mean PM2.5 for one day or for a range of days.
+
+    A range also gets its highest, lowest and mean values.
+
+    Args:
+        day (str): The day, or the first day of a range, in the user's words.
+            Empty for yesterday.
+        until (str): The last day of a range, in the same forms. Empty for one day.
+        today (date): The date that phrases such as "yesterday" count from.
+
+    Returns:
+        str: One line per measured day, then the summary lines for a range. If
+            nothing was measured, the last day that has a reading.
+
+    Raises:
+        ValueError: If `day` or `until` cannot be read as a day.
+    """
     start = resolve(day or "yesterday", today)
     end = resolve(until, today) if until else start
     start, end = min(start, end), max(start, end)
@@ -78,6 +120,16 @@ def observed_text(day: str, until: str, today: date) -> str:
 
 
 def model_error_text(days: int) -> str:
+    """
+    Describes the error of the champion and the challenger for each lead.
+
+    Args:
+        days (int): How many recent measured days to score.
+
+    Returns:
+        str: One line per lead with both mean absolute errors and the lower one,
+            and a closing line when one model is lower at every lead.
+    """
     table = reports.error_by_lead(days)
     if table.empty:
         return "No predictions have been scored yet."
@@ -93,6 +145,15 @@ def model_error_text(days: int) -> str:
 
 
 def _safely(make) -> str:
+    """
+    Runs a text function and turns an unreadable day into a message for the model.
+
+    Args:
+        make (Callable[[], str]): The function that builds the tool's answer.
+
+    Returns:
+        str: The answer, or a message that lists the day forms the tools accept.
+    """
     try:
         return make()
     except ValueError:
@@ -101,12 +162,13 @@ def _safely(make) -> str:
 
 @tool
 def get_forecast(day: str = "", model: str = CHAMPION) -> str:
-    """The latest PM2.5 forecast: one day's prediction, or the next seven days.
+    """
+    Gets the latest PM2.5 forecast, for one day or for all seven days ahead.
 
     Args:
-        day: the day predicted, in the user's words: "tomorrow", "in 3 days",
-            "saturday" or YYYY-MM-DD. Leave empty for all seven days.
-        model: "champion" (the model in use, the default) or "challenger".
+        day (str): The day to forecast, in the user's words, such as "tomorrow",
+            "in 3 days", "saturday" or YYYY-MM-DD. Leave empty for all seven days.
+        model (str): "champion" for the model in use (the default), or "challenger".
     """
     model = model if model in (CHAMPION, CHALLENGER) else CHAMPION
     return _safely(lambda: forecast_text(day, model, utc_today()))
@@ -114,34 +176,60 @@ def get_forecast(day: str = "", model: str = CHAMPION) -> str:
 
 @tool
 def get_observed(day: str = "", until: str = "") -> str:
-    """Measured daily mean PM2.5 for one day, or for a range with the highest,
-    lowest and mean already worked out.
+    """
+    Gets the measured daily mean PM2.5 for one day or for a range of days.
+
+    A range also gets its highest, lowest and mean values.
 
     Args:
-        day: the day, or the first day of a range, in the user's words:
-            "yesterday", "3 days ago", "last monday" or YYYY-MM-DD.
-        until: the last day of a range, in the same forms; empty for one day.
+        day (str): The day, or the first day of a range, in the user's words, such
+            as "yesterday", "3 days ago", "last monday" or YYYY-MM-DD.
+        until (str): The last day of a range, in the same forms. Leave empty for
+            one day.
     """
     return _safely(lambda: observed_text(day, until, utc_today()))
 
 
 @tool
 def get_model_error(days: int = 30) -> str:
-    """How accurate the champion and the challenger have been: mean absolute
-    error by lead (days ahead), and which model has the lower error.
+    """
+    Gets how accurate the champion and the challenger have been.
+
+    The error is the mean absolute error for each number of days ahead, with the
+    model that has the lower error named.
 
     Args:
-        days: how many recent measured days to score, default 30.
+        days (int): How many recent measured days to score. The default is 30.
     """
     return model_error_text(days)
 
 
 def _model(model_id: str = ASSISTANT_MODEL) -> OllamaModel:
+    """
+    Connects to a model served by the local Ollama server.
+
+    Args:
+        model_id (str): The Ollama model name. Defaults to `AIRQ_MODEL`.
+
+    Returns:
+        OllamaModel: The model for a Strands agent.
+    """
     return OllamaModel(host=OLLAMA_HOST, model_id=model_id)
 
 
 def build(**kwargs) -> Agent:
-    """A new agent, holding its own conversation."""
+    """
+    Builds a new agent with its own conversation.
+
+    The system prompt names today's date and weekday in UTC, so the model can say
+    which day an answer is about.
+
+    Args:
+        **kwargs: Passed on to `Agent`, such as `callback_handler`.
+
+    Returns:
+        Agent: The agent, with the three tools.
+    """
     today = utc_today()
     weekday = WEEKDAYS[today.weekday()].capitalize()
     return Agent(

@@ -2,7 +2,7 @@ from datetime import date
 
 import pandas as pd
 
-from airq import reports
+from airq.app import reports
 
 
 def _predictions():
@@ -15,6 +15,7 @@ def _predictions():
 
 
 def test_forecast_is_the_latest_run_on_or_before_the_date(monkeypatch):
+    """Verify that the forecast comes from the latest run on or before the date, and is empty before the first run."""
     monkeypatch.setattr(reports, "_scan", lambda identifier: _predictions())
     monkeypatch.setattr(reports, "served_models", lambda: [{"alias": "champion", "version": "3", "feature_set": "v1"}])  # fmt: skip
     assert set(reports.forecast(date(2026, 9, 21))["as_of"]) == {date(2026, 9, 20)}
@@ -25,6 +26,7 @@ def test_forecast_is_the_latest_run_on_or_before_the_date(monkeypatch):
 
 
 def test_lower_names_the_smaller_error_and_handles_a_missing_model():
+    """Verify that the lower error is named correctly, including a tie and a missing challenger."""
     assert reports._lower(1.8, 0.8) == "challenger"
     assert reports._lower(0.7, 0.8) == "champion"
     assert reports._lower(0.8, 0.8) == "equal"
@@ -32,6 +34,7 @@ def test_lower_names_the_smaller_error_and_handles_a_missing_model():
 
 
 def test_a_version_holding_both_aliases_appears_under_each(monkeypatch):
+    """Verify that a version holding both aliases appears once under each, and a version with none gets an empty alias."""
     served = [{"alias": "champion", "version": "6", "feature_set": "v2"},
               {"alias": "challenger", "version": "6", "feature_set": "v2"}]  # fmt: skip
     monkeypatch.setattr(reports, "served_models", lambda: served)
@@ -44,7 +47,7 @@ def test_a_version_holding_both_aliases_appears_under_each(monkeypatch):
 
 
 def test_a_missing_table_reads_as_no_rows(monkeypatch):
-    """Straight after a backfill there is no predictions table yet."""
+    """Verify that a missing table, as the predictions table is straight after a backfill, reads as no rows."""
 
     class NoTables:
         def table_exists(self, identifier):

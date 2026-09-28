@@ -6,7 +6,7 @@ from airq.models import Observation, WeatherForecast
 
 
 def test_each_hour_issues_one_forecast_per_lead(simulate):
-    """Seven forecasts per hour, each for the hour `lead_days` after it was issued."""
+    """Verify that each hour issues seven forecasts, each for the hour `lead_days` later."""
     forecasts = [r for r in simulate(days=3) if isinstance(r, WeatherForecast)]
     by_issue = defaultdict(list)
     for row in forecasts:
@@ -21,8 +21,15 @@ def test_each_hour_issues_one_forecast_per_lead(simulate):
 
 
 def test_observations_are_hourly_and_arrive_after_the_hour(simulate):
+    """Verify that readings are hourly and arrive one hour after the hour they measure."""
     observations = [r for r in simulate(days=3) if isinstance(r, Observation)]
     assert observations, "no observations in three days"
     for row in observations:
         assert row.measured_at.minute == 0 and row.pm2_5 >= 0
         assert row.ingested_at == row.measured_at + timedelta(hours=1)
+
+
+def test_same_seed_gives_the_same_rows(simulate):
+    """Verify that the same seed gives the same rows and a different seed does not."""
+    assert simulate(days=3, seed=7) == simulate(days=3, seed=7)
+    assert simulate(days=3, seed=7) != simulate(days=3, seed=8)

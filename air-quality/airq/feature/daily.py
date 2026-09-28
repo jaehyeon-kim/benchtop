@@ -1,13 +1,16 @@
-"""Daily run: one day's rows into the four Iceberg tables, with PyIceberg only.
+"""Writes one day's rows to the four Iceberg tables, with PyIceberg only.
 
-It reads the origin and seed the backfill stored on the tables, generates from
-that origin to the end of the day, the same values the backfill writes, and
-keeps that day. A different `seed` generates different values for the day, which
-no longer continue from the days the backfill wrote. The day it keeps: the forecasts issued on it, its readings, the daily
-weather issued on it and its air quality. Each table gets one overwrite filtered
-to the day, a delete and an insert in one commit, so a rerun replaces the day.
+The run reads the first hour and the seed that the backfill stored on the tables. It
+generates the data from that hour to the end of the day, which gives the same values the
+backfill writes, and keeps only that day. A different `seed` gives different values,
+which do not continue from the backfill's days.
 
-Run: python -m airq.daily --date "3 days ago" --seed 42   (defaults: yesterday, UTC, and the backfill's seed)
+The day's rows are the forecasts issued on it, its readings, the daily weather issued on
+it and its air quality. In each table they replace any rows for that day in one commit,
+so running a day again replaces it.
+
+Run: python -m airq.feature.daily --date "3 days ago" --seed 42
+Defaults: yesterday (UTC) and the backfill's seed.
 """
 
 import argparse
@@ -18,18 +21,35 @@ from pydantic import BaseModel
 
 from airq import days
 from airq.config import ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
-from airq.features import DAY_COLUMN, daily_features, in_window
-from airq.generator import generate
+from airq.feature.features import DAY_COLUMN, daily_features, in_window
+from airq.feature.generator import generate
 from airq.iceberg import catalog, to_arrow
 from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 
-logger = logging.getLogger("airq.daily")  # __name__ is "__main__" under python -m
+logger = logging.getLogger(
+    "airq.feature.daily"
+)  # __name__ is "__main__" under python -m
 
 
 def day_rows(
     day: date, origin: datetime, seed: int
 ) -> dict[type[BaseModel], list[BaseModel]]:
-    """Every table's rows for `day`, generated from `origin`."""
+    """
+    Returns the rows that one day adds to each table.
+
+    The readings of the day before are generated too, because the day's air quality row
+    needs the previous day's mean. Only the day's own rows are returned.
+
+    Args:
+        day (date): The day to generate.
+        origin (datetime): The first hour of the generated data, as stored by the
+            backfill.
+        seed (int): The seed for the generated values.
+
+    Returns:
+        dict[type[BaseModel], list[BaseModel]]: The day's rows for each table, keyed by
+            the table's model.
+    """
     start = datetime.combine(day, time(), UTC)
     end = start + timedelta(days=1)
     forecasts, observations = [], []
@@ -52,6 +72,18 @@ def day_rows(
 
 
 def run(day: date, seed: int | None = None) -> None:
+    """
+    Writes the rows for `day` to the four tables, replacing any rows for that day.
+
+    Args:
+        day (date): The day to write.
+        seed (int, optional): The seed for the generated values. Defaults to the seed
+            the backfill stored.
+
+    Raises:
+        SystemExit: If the tables do not exist, have no stored first hour, or start
+            after `day`.
+    """
     cat = catalog()
     if not cat.table_exists(TABLES[Observation]):
         raise SystemExit("There are no tables yet: run the backfill first.")

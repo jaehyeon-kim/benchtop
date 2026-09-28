@@ -1,10 +1,11 @@
 import pandas as pd
 import pytest
 
-from airq.train import random_split, scores, split, split_table
+from airq.training.train import random_split, scores, split, split_table
 
 
 def test_split_keeps_time_order_and_puts_the_last_days_in_test():
+    """Verify that the split keeps time order and puts the last days in the test set."""
     days = pd.date_range("2026-01-01", periods=10, tz="UTC")
     frame = pd.DataFrame({"event_timestamp": days[::-1], "pm2_5": range(10)})
     train, test = split(frame, test_fraction=0.2)
@@ -14,6 +15,7 @@ def test_split_keeps_time_order_and_puts_the_last_days_in_test():
 
 
 def test_scores_on_a_known_error():
+    """Verify MAE, RMSE and R² on predictions that are all off by one."""
     result = scores([1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0])
     assert result["mae"] == pytest.approx(1.0)
     assert result["rmse"] == pytest.approx(1.0)
@@ -21,6 +23,7 @@ def test_scores_on_a_known_error():
 
 
 def test_random_split_has_the_same_sizes_but_mixes_the_days():
+    """Verify that the random split has the same sizes as the time-ordered split but mixes the days."""
     days = pd.date_range("2026-01-01", periods=50, tz="UTC")
     frame = pd.DataFrame({"event_timestamp": days, "pm2_5": range(50)})
     train, test = random_split(frame, test_fraction=0.2)
@@ -29,6 +32,7 @@ def test_random_split_has_the_same_sizes_but_mixes_the_days():
 
 
 def test_split_table_puts_the_baseline_first():
+    """Verify that the split table lists the baseline first, then each model."""
     metrics = {"mae": 1.0, "random_split_mae": 0.9, "baseline_mae": 3.0, "random_split_baseline_mae": 2.9}  # fmt: skip
     table = split_table({"v1": metrics, "v2": {**metrics, "mae": 0.5}})
     assert list(table["model"]) == ["baseline", "v1", "v2"]

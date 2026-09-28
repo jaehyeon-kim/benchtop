@@ -1,11 +1,11 @@
-"""The air quality app: one NiceGUI page with two tabs.
+"""The web app: one NiceGUI page with two tabs.
 
-- Monitoring: the models in use, the forecast against what was measured, and
+- Monitoring: the models in use, the forecast against the measured values, and
   each model's error over time and by lead.
-- Assistant: a chat with the forecast agent in `airq.assistant`, which runs in
-  the same process.
+- Assistant: a chat with the agent in `airq.app.assistant`, which runs in the
+  same process.
 
-Everything is read from Iceberg and MLflow through `airq.reports`.
+All data comes from Iceberg and MLflow through `airq.app.reports`.
 
 Run: python -m airq.app   (then open http://127.0.0.1:8090)
 """
@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 from nicegui import ui
 
-from airq import assistant, reports
+from airq.app import assistant, reports
 from airq.config import APP_PORT
 
 _HISTORY_DAYS = 60
@@ -24,16 +24,42 @@ _ERROR_DAYS = 30
 
 
 def _points(frame: pd.DataFrame, value: str) -> list[list]:
+    """
+    Turns rows into chart points.
+
+    Args:
+        frame (pd.DataFrame): Rows with a `day` column.
+        value (str): The column to plot.
+
+    Returns:
+        list[list]: One `[day, value]` pair per row, rounded to 2 decimals.
+    """
     return [[str(d), round(float(v), 2)] for d, v in zip(frame["day"], frame[value])]
 
 
 def _label(version: str, served: dict[str, str]) -> str:
+    """
+    Names a model version for a chart legend.
+
+    Args:
+        version (str): The model version.
+        served (dict[str, str]): The alias of each served version.
+
+    Returns:
+        str: Such as "v7 (champion)", or "v5" for a version with no alias.
+    """
     alias = served.get(version)
     return f"v{version} ({alias})" if alias else f"v{version}"
 
 
 def _aliases() -> dict[str, str]:
-    """Each served version's alias, or both aliases when one version holds both."""
+    """
+    Maps each served model version to its alias.
+
+    Returns:
+        dict[str, str]: The alias of each version. A version that holds both aliases
+            gets "champion and challenger".
+    """
     served: dict[str, list[str]] = {}
     for m in reports.served_models():
         served.setdefault(m["version"], []).append(m["alias"])
@@ -41,7 +67,15 @@ def _aliases() -> dict[str, str]:
 
 
 def forecast_chart() -> dict:
-    """Measured PM2.5, each version's lead-1 predictions, and the latest forecast."""
+    """
+    Builds the forecast chart.
+
+    It draws the measured PM2.5 and each version's 1-day-ahead predictions for the
+    last 60 measured days, then each version's latest forecast.
+
+    Returns:
+        dict: The ECharts options.
+    """
     served = _aliases()
     history = reports.history(_HISTORY_DAYS)
     latest = reports.forecast()
@@ -78,7 +112,13 @@ def forecast_chart() -> dict:
 
 
 def error_chart() -> dict:
-    """Absolute error of each version's lead-1 prediction, day by day."""
+    """
+    Builds the chart of each version's daily absolute error on its 1-day-ahead
+    predictions.
+
+    Returns:
+        dict: The ECharts options.
+    """
     served = _aliases()
     history = reports.history(_HISTORY_DAYS)
     return {
@@ -96,7 +136,13 @@ def error_chart() -> dict:
 
 
 def _error_table() -> tuple[list[dict], list[dict]]:
-    """Columns and rows: one row per lead, one column per model version."""
+    """
+    Builds the error table: one row per lead and one column per model version.
+
+    Returns:
+        tuple[list[dict], list[dict]]: The table's columns and rows, in the form
+            `ui.table` takes.
+    """
     table = reports.model_error(_ERROR_DAYS)
     wide = table.pivot(index="lead_days", columns="model_version", values="mae")
     names = ["lead_days", *(f"v{v}" for v in wide.columns)]
@@ -110,6 +156,11 @@ def _error_table() -> tuple[list[dict], list[dict]]:
 
 @ui.page("/")
 def page() -> None:
+    """
+    Builds the page with its two tabs.
+
+    Each browser tab gets its own agent, so each has its own conversation.
+    """
     agent = assistant.build(callback_handler=None)  # one conversation per browser tab
     ui.page_title("Air quality")
     with ui.header().classes("items-center"):

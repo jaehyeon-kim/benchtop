@@ -1,11 +1,11 @@
-"""Training pipeline DAG.
+"""Defines the training pipeline DAG.
 
-- airq_training: triggered by hand, trains v1 and v2 and registers both. The new
-  version of the champion's feature set becomes `champion`, the other `challenger`.
-  It marks the models updated (an Airflow asset), which starts airq_inference, so
-  the new versions have a forecast straight away.
+- airq_training: started by hand. It trains v1 and v2 and registers both. The new
+  version of the champion's feature set becomes `champion`, and the other becomes
+  `challenger`. It then marks the models asset as updated, which starts airq_inference,
+  so the new versions have a forecast straight away.
 
-The `airq` package is uploaded beside this file.
+The `airq` package is uploaded next to this file.
 """
 
 from airflow.sdk import Asset, dag, task
@@ -19,7 +19,7 @@ _MODELS = Asset(MODELS_ASSET)
 def airq_training():
     @task(outlets=[_MODELS])
     def train():
-        from airq.train import train
+        from airq.training.train import train
 
         return train()
 

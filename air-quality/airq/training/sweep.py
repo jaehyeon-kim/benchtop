@@ -1,27 +1,23 @@
-"""Feature sweep: which daily features v2 adds to v1's weather features, and the
-book's exercise 1 on lagged PM2.5.
+"""Chooses the daily features v2 adds to v1, and tests past PM2.5 values as features.
 
-Part 1, lags at lead 1: one nested MLflow run per candidate set, each adding one
-feature to the last: weather only, the weekend flag, then yesterday's PM2.5
-(lag 1), the day before (lag 2) and the day before that (lag 3). The model and
-the test days are the same in all, and each is scored on the time-ordered split
-and on a random split of the same size. The weather comes from Feast's
-`weather_v1` view; the weekend flag and the lags come straight from
-`daily_air_quality`, because no view over them exists until the sweep has
-chosen.
+Part 1 works at lead 1. Each candidate feature set adds one feature to the set before:
+weather only, then the weekend flag, then the PM2.5 of 1, 2 and 3 days before (lags 1 to
+3). Each set is scored on the time-ordered split and on a random split, with the same
+model and the same test days. The weather comes from Feast's `weather_v1` view. The
+weekend flag and the lags come from `daily_air_quality`, because Feast has no view for
+them until the sweep has chosen.
 
-The stored tables hold one seed's data, so each candidate is also scored on
-data generated in memory with other seeds, by the same generator and feature
-code. The chosen set is the smallest one after which adding the next candidate
-improves the mean MAE by less than `MIN_GAIN`.
+The stored tables hold data from one seed. So each set is also scored on data generated
+in memory with other seeds. The chosen set is the smallest one where adding the next
+candidate lowers the mean MAE by less than `MIN_GAIN`.
 
-Part 2, lags at every lead: standing on day D, the latest reading is D's own, so
-a forecast for D+N can use a lag of N days at best. For each lead N, the weather
-forecast at lead N and the weekend flag are scored with and without that lag.
+Part 2 works at every lead. On day D, the latest reading is D's own, so a forecast for
+day D+N can use a lag of N days at best. For each lead N, it scores the weather and the
+weekend flag with and without the N-day lag.
 
-Nothing is registered.
+The results are logged to MLflow. No model is registered.
 
-Run: python -m airq.sweep --seeds 0 1 2 3 4
+Run: python -m airq.training.sweep --seeds 0 1 2 3 4
 """
 
 import argparse
@@ -33,14 +29,16 @@ import mlflow
 import pandas as pd
 
 from airq.config import EXPERIMENT, LEADS, ORIGIN_PROPERTY, TABLES
-from airq.feast_repo import FEATURE_SETS, V1_COLUMNS
-from airq.features import daily_features
-from airq.generator import generate
+from airq.feature.features import daily_features
+from airq.feature.generator import generate
 from airq.iceberg import catalog
 from airq.models import DailyAirQuality, Observation
-from airq.train import fit_and_score, training_frame
+from airq.store.feast_repo import FEATURE_SETS, V1_COLUMNS
+from airq.training.train import fit_and_score, training_frame
 
-logger = logging.getLogger("airq.sweep")  # __name__ is "__main__" under python -m
+logger = logging.getLogger(
+    "airq.training.sweep"
+)  # __name__ is "__main__" under python -m
 
 MIN_GAIN = 0.05  # a smaller relative drop in MAE does not matter
 _WEATHER_WEEKEND = [*V1_COLUMNS, "is_weekend"]
@@ -54,8 +52,20 @@ CANDIDATES = {
 
 
 def add_lags(frame: pd.DataFrame, daily_pm: pd.Series, lags: list[int]) -> pd.DataFrame:
-    """Adds `lag<k>`, the measured PM2.5 k days before each row's day, and drops
-    rows where one is missing. `daily_pm` is indexed by day."""
+    """
+    Adds past PM2.5 values as `lag<k>` columns.
+
+    `lag<k>` is the measured daily PM2.5 k days before the row's day. Rows where any lag
+    is missing are dropped.
+
+    Args:
+        frame (pd.DataFrame): The training frame, with a `day` column.
+        daily_pm (pd.Series): The measured daily PM2.5, indexed by day.
+        lags (list[int]): The lags to add, in days.
+
+    Returns:
+        pd.DataFrame: A copy of the frame with the lag columns added.
+    """
     frame = frame.copy()
     for k in lags:
         frame[f"lag{k}"] = (frame["day"] - timedelta(days=k)).map(daily_pm)
@@ -63,8 +73,22 @@ def add_lags(frame: pd.DataFrame, daily_pm: pd.Series, lags: list[int]) -> pd.Da
 
 
 def generated_frame(origin: datetime, n_days: int, seed: int, lead: int = 1):
-    """The training frame's columns, and the daily PM2.5 by day, for `n_days`
-    generated in memory from `origin`, with the weather forecast at `lead`."""
+    """
+    Builds a training frame from data generated in memory with another seed.
+
+    It generates `n_days` of hourly records from `origin`, and turns them into daily
+    features with the feature pipeline's code. Nothing is written.
+
+    Args:
+        origin (datetime): The first hour of the data.
+        n_days (int): How many days to generate.
+        seed (int): The seed for the generator.
+        lead (int): How many days before each day its weather forecast was issued.
+
+    Returns:
+        tuple[pd.DataFrame, pd.Series]: The training frame, and the measured daily PM2.5
+            indexed by day.
+    """
     forecasts, observations = [], []
     records = generate(origin, seed)
     for _ in range(n_days * 24):
@@ -81,7 +105,16 @@ def generated_frame(origin: datetime, n_days: int, seed: int, lead: int = 1):
 
 
 def _stored_frame(lead: int = 1):
-    """The stored data's training frame at `lead`, and its daily PM2.5 by day."""
+    """
+    Builds a training frame from the stored tables, through Feast.
+
+    Args:
+        lead (int): How many days before each day its weather forecast was issued.
+
+    Returns:
+        tuple[pd.DataFrame, pd.Series]: The training frame with the weekend flag, and
+            the measured daily PM2.5 indexed by day.
+    """
     frame = training_frame(*FEATURE_SETS["v1"], extra_labels=("is_weekend",), lead=lead)
     frame["day"] = frame["event_timestamp"].dt.date
     daily = catalog().load_table(TABLES[DailyAirQuality]).scan().to_pandas()
@@ -89,7 +122,19 @@ def _stored_frame(lead: int = 1):
 
 
 def choose(mean_mae: dict[str, float]) -> str:
-    """The smallest candidate after which the next one gains less than MIN_GAIN."""
+    """
+    Chooses the smallest candidate set worth using.
+
+    It goes through the candidates in order. It stops at the first one where adding the
+    next candidate lowers the MAE by less than `MIN_GAIN`, as a share of the current
+    MAE. If every step gains enough, it returns the last candidate.
+
+    Args:
+        mean_mae (dict[str, float]): The mean MAE of each candidate, in candidate order.
+
+    Returns:
+        str: The name of the chosen candidate.
+    """
     names = list(mean_mae)
     for name, larger in pairwise(names):
         if (mean_mae[name] - mean_mae[larger]) / mean_mae[name] < MIN_GAIN:
@@ -98,8 +143,20 @@ def choose(mean_mae: dict[str, float]) -> str:
 
 
 def lag_table(frames: dict) -> pd.DataFrame:
-    """Part 1: time-ordered and random-split MAE of each candidate on each data set,
-    over the same days for every candidate."""
+    """
+    Scores every candidate set on every data set, for part 1.
+
+    Each frame gets lags 1 to 3 first, and rows missing any of them are dropped. So
+    every candidate is scored on the same days.
+
+    Args:
+        frames (dict): The training frame and daily PM2.5 of each data set, by name:
+            `stored` and `seed_<n>`.
+
+    Returns:
+        pd.DataFrame: One row per candidate, with its MAE on each data set on both
+            splits, and the mean on each split.
+    """
     rows = {}
     for name, columns in CANDIDATES.items():
         row = {}
@@ -114,7 +171,19 @@ def lag_table(frames: dict) -> pd.DataFrame:
 
 
 def horizon_table(frames_by_lead: dict[int, dict]) -> pd.DataFrame:
-    """Part 2: mean MAE at each lead N, without a lag and with the lag of N days."""
+    """
+    Scores each lead with and without its lag, for part 2.
+
+    At lead N, the only usable lag is N days. For each lead, every data set is scored
+    with the weather and the weekend flag, first without the lag and then with it.
+
+    Args:
+        frames_by_lead (dict[int, dict]): The data sets of each lead, in the same form
+            as for `lag_table`.
+
+    Returns:
+        pd.DataFrame: One row per lead, with the mean MAE without and with the lag.
+    """
     rows = []
     for lead, frames in frames_by_lead.items():
         without, with_lag = [], []
@@ -135,6 +204,18 @@ def horizon_table(frames_by_lead: dict[int, dict]) -> pd.DataFrame:
 
 
 def sweep(seeds: list[int]) -> str:
+    """
+    Runs both parts of the sweep and logs them to MLflow.
+
+    The results go to one run named `feature-sweep`, with a nested run per candidate
+    set. Both tables are also written to the log.
+
+    Args:
+        seeds (list[int]): The seeds used to generate the extra data sets.
+
+    Returns:
+        str: The name of the chosen candidate set.
+    """
     stored = _stored_frame()
     properties = catalog().load_table(TABLES[Observation]).properties
     origin = datetime.fromisoformat(properties[ORIGIN_PROPERTY])

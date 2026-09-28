@@ -1,10 +1,11 @@
-"""Day phrases turned into a date in UTC: "yesterday", "3 days ago", "a week ago",
-"day before yesterday", "last monday", "this weekend", "20 September" or
-YYYY-MM-DD. The command-line tools, the Airflow DAG parameters and the forecast
-assistant all accept them, so a command never needs a date written out.
+"""Turns day phrases into dates in UTC.
 
-The common forms are read here; anything else goes to the dateparser library,
-which reads many more, such as "three days ago" or "2 weeks ago".
+The command-line tools, the Airflow DAG parameters and the assistant all accept day
+phrases, so a date never has to be written out. Examples are "yesterday", "3 days ago",
+"last monday", "this weekend", "20 September" and YYYY-MM-DD.
+
+`resolve` reads the common phrases itself. Any other phrase goes to the dateparser
+library, which reads many more, such as "three days ago".
 """
 
 import argparse
@@ -16,13 +17,35 @@ FORMS = 'a phrase such as yesterday, "3 days ago", "a week ago", "last monday", 
 
 
 def today() -> date:
+    """
+    Returns today's date in UTC.
+
+    Returns:
+        date: Today's date in UTC.
+    """
     return datetime.now(UTC).date()
 
 
 def resolve(text: str, on: date | None = None, forward: bool = False) -> date:
-    """The date a phrase names, counted from `on` (default: today, UTC). A bare
-    weekday is the next one when `forward` (a forecast), otherwise the last one
-    (a reading); `on` itself counts for both."""
+    """
+    Returns the date that a day phrase names.
+
+    A bare weekday such as "saturday" can mean the next one or the last one. `forward`
+    chooses: the next one for a forecast, the last one for a reading. `on` itself counts
+    as that weekday in both cases.
+
+    Args:
+        text (str): The day phrase, such as "yesterday", "in 3 days" or YYYY-MM-DD.
+        on (date, optional): The day the phrase is counted from. Defaults to today, UTC.
+        forward (bool): Whether a bare weekday means the next one rather than the last
+            one.
+
+    Returns:
+        date: The date the phrase names.
+
+    Raises:
+        ValueError: If neither this module nor dateparser can read the phrase.
+    """
     on = on or today()
     phrase = " ".join(text.lower().split())
     fixed = {"today": 0, "yesterday": -1, "tomorrow": 1}
@@ -49,6 +72,22 @@ def resolve(text: str, on: date | None = None, forward: bool = False) -> date:
 
 
 def _parse(phrase: str, on: date, forward: bool) -> date:
+    """
+    Returns the date that dateparser reads from a phrase.
+
+    dateparser is imported inside the function, because it takes about a second to load.
+
+    Args:
+        phrase (str): The day phrase, in lower case with single spaces.
+        on (date): The day the phrase is counted from.
+        forward (bool): Whether to prefer a future date over a past one.
+
+    Returns:
+        date: The date the phrase names.
+
+    Raises:
+        ValueError: If dateparser cannot read the phrase.
+    """
     import dateparser  # imported here: it takes about a second to load
 
     settings = {
@@ -62,7 +101,21 @@ def _parse(phrase: str, on: date, forward: bool) -> date:
 
 
 def argument(text: str) -> date:
-    """argparse type: a day phrase, or an error naming the accepted forms."""
+    """
+    Returns the date that a command-line day phrase names.
+
+    It is the argparse `type` for day options, such as `--date` and `--as-of`.
+
+    Args:
+        text (str): The day phrase given on the command line.
+
+    Returns:
+        date: The date the phrase names, counted from today, UTC.
+
+    Raises:
+        argparse.ArgumentTypeError: If the phrase cannot be read. The message lists the
+            accepted forms.
+    """
     try:
         return resolve(text)
     except ValueError:

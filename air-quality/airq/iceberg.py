@@ -1,4 +1,4 @@
-"""Iceberg: the catalog, the tables, and their schemas derived from the pydantic models."""
+"""Connects to the Iceberg catalog and derives the table schemas from the pydantic models."""
 
 from datetime import date
 
@@ -20,7 +20,18 @@ _ARROW = {
 
 
 def arrow_schema(model: type[BaseModel]) -> pa.Schema:
-    """Arrow schema, and so Iceberg schema, derived from the model."""
+    """
+    Derives the Arrow schema of a table from its pydantic model.
+
+    PyIceberg creates the Iceberg schema from the same Arrow schema. Every field is
+    required.
+
+    Args:
+        model (type[BaseModel]): The pydantic model of the table's rows.
+
+    Returns:
+        pa.Schema: One non-nullable field per model field.
+    """
     return pa.schema(
         pa.field(name, _ARROW[info.annotation], nullable=False)
         for name, info in model.model_fields.items()
@@ -28,13 +39,29 @@ def arrow_schema(model: type[BaseModel]) -> pa.Schema:
 
 
 def catalog() -> Catalog:
-    """The Iceberg REST catalog, configured by the PYICEBERG_CATALOG__ODCTL__* variables."""
+    """
+    Returns the Iceberg REST catalog.
+
+    The PYICEBERG_CATALOG__ODCTL__* variables configure it. `airq.config` sets them on
+    the host.
+
+    Returns:
+        Catalog: The PyIceberg catalog that `CATALOG` names.
+    """
     return load_catalog(CATALOG)
 
 
 def recreate_tables(cat, properties: dict[str, str]) -> None:
-    """Drops and recreates the feature pipeline's tables, and drops the
-    predictions, which were made from the data being replaced."""
+    """
+    Drops and recreates the four tables of the feature pipeline.
+
+    It also drops the predictions table, because its predictions were made from the data
+    being replaced. It first creates the `airq` namespace if it does not exist.
+
+    Args:
+        cat (Catalog): The Iceberg catalog.
+        properties (dict[str, str]): The table properties set on each new table.
+    """
     cat.create_namespace_if_not_exists(NAMESPACE)
     if cat.table_exists(PREDICTIONS):
         cat.drop_table(PREDICTIONS)
@@ -45,6 +72,16 @@ def recreate_tables(cat, properties: dict[str, str]) -> None:
 
 
 def to_arrow(model: type[BaseModel], rows: list[BaseModel]) -> pa.Table:
+    """
+    Converts rows to an Arrow table with the schema of their model.
+
+    Args:
+        model (type[BaseModel]): The pydantic model of the rows.
+        rows (list[BaseModel]): The rows to convert.
+
+    Returns:
+        pa.Table: The rows, with the schema from `arrow_schema`.
+    """
     return pa.Table.from_pylist(
         [r.model_dump() for r in rows], schema=arrow_schema(model)
     )

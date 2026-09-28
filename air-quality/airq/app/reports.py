@@ -1,6 +1,7 @@
-"""Queries shared by the app's Monitoring tab and the assistant: the models in
-use, the forecast, the observed PM2.5 and the error of past predictions. They
-read Iceberg and MLflow and write nothing.
+"""Queries shared by the Monitoring tab and the assistant.
+
+They return the models in use, the forecast, the measured PM2.5 and the error of
+past predictions. They read Iceberg and MLflow and never write.
 """
 
 from datetime import date, timedelta
@@ -11,13 +12,23 @@ from mlflow.exceptions import MlflowException
 
 from airq.config import CHALLENGER, CHAMPION, MODEL_NAME, PREDICTIONS, TABLES
 from airq.iceberg import catalog
-from airq.infer import errors
+from airq.inference.infer import errors
 from airq.models import DailyAirQuality, Prediction
 
 
 def _scan(identifier: str) -> pd.DataFrame:
-    """The table's rows, or no rows with its columns when it does not exist yet,
-    as with predictions straight after a backfill."""
+    """
+    Reads a whole Iceberg table.
+
+    A table that does not exist yet gives an empty frame with its columns. This
+    happens to the predictions table straight after a backfill.
+
+    Args:
+        identifier (str): The table name, such as `airq.predictions`.
+
+    Returns:
+        pd.DataFrame: The table's rows.
+    """
     cat = catalog()
     if not cat.table_exists(identifier):
         model = {name: model for model, name in TABLES.items()}.get(
@@ -28,7 +39,13 @@ def _scan(identifier: str) -> pd.DataFrame:
 
 
 def served_models() -> list[dict]:
-    """The champion and, when set, the challenger: alias, version and feature set."""
+    """
+    Lists the models the aliases point at.
+
+    Returns:
+        list[dict]: The champion, then the challenger when one is set. Each has its
+            `alias`, `version` and `feature_set`.
+    """
     client, served = MlflowClient(), []
     for alias in (CHAMPION, CHALLENGER):
         try:
@@ -46,8 +63,18 @@ def served_models() -> list[dict]:
 
 
 def _with_alias(frame: pd.DataFrame) -> pd.DataFrame:
-    """Adds each row's alias. A version holding both aliases, as straight after a
-    promotion, appears once under each; a version with none gets an empty alias."""
+    """
+    Adds an `alias` column to rows that have a `model_version`.
+
+    A version that holds both aliases, as straight after a promotion, appears once
+    under each. A version with no alias gets an empty string.
+
+    Args:
+        frame (pd.DataFrame): Rows with a `model_version` column.
+
+    Returns:
+        pd.DataFrame: The rows with an `alias` column.
+    """
     served = pd.DataFrame(served_models(), columns=["alias", "version", "feature_set"])
     served = served[["alias", "version"]].rename(columns={"version": "model_version"})
     joined = frame.merge(served, on="model_version", how="left")
@@ -55,8 +82,17 @@ def _with_alias(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def forecast(as_of: date | None = None) -> pd.DataFrame:
-    """The forecast available on `as_of`: the latest run made on or before it, or
-    the latest run of all when it is None."""
+    """
+    Returns the forecast that was available on a date.
+
+    Args:
+        as_of (date | None): The date. The latest run made on or before it is
+            returned. If None, the latest run of all is returned.
+
+    Returns:
+        pd.DataFrame: One row per model version and day predicted, with its alias.
+            Empty if no run was made by `as_of`.
+    """
     predictions = _scan(PREDICTIONS)
     if as_of is not None:
         predictions = predictions[predictions["as_of"] <= as_of]
@@ -68,20 +104,43 @@ def forecast(as_of: date | None = None) -> pd.DataFrame:
 
 
 def observed(start: date, end: date) -> pd.DataFrame:
-    """Measured daily mean PM2.5 from `start` to `end`, both included."""
+    """
+    Returns the measured daily mean PM2.5 for a range of days.
+
+    Args:
+        start (date): The first day, included.
+        end (date): The last day, included.
+
+    Returns:
+        pd.DataFrame: The `day` and `pm2_5` columns, sorted by day.
+    """
     daily = _scan(TABLES[DailyAirQuality])
     rows = daily[(daily["day"] >= start) & (daily["day"] <= end)]
     return rows[["day", "pm2_5"]].sort_values("day", ignore_index=True)
 
 
 def last_measured_day() -> date | None:
-    """The latest day with a measured daily mean, or None before any reading."""
+    """
+    Returns the latest day that has a measured daily mean.
+
+    Returns:
+        date | None: The day, or None before the first reading.
+    """
     days = _scan(TABLES[DailyAirQuality])["day"]
     return None if days.empty else days.max()
 
 
 def history(days: int) -> pd.DataFrame:
-    """Lead-1 predictions beside the measured value, for the last `days` measured days."""
+    """
+    Returns the 1-day-ahead predictions beside the measured values.
+
+    Args:
+        days (int): How many days to cover, counted back from the last measured day.
+
+    Returns:
+        pd.DataFrame: One row per model version and day, with the prediction, the
+            measured value and the absolute error.
+    """
     daily = _scan(TABLES[DailyAirQuality])
     joined = errors(_scan(PREDICTIONS), daily)
     if daily.empty:
@@ -92,8 +151,16 @@ def history(days: int) -> pd.DataFrame:
 
 
 def model_error(days: int = 30) -> pd.DataFrame:
-    """Each model version's mean absolute error by lead, over predictions for the
-    last `days` measured days."""
+    """
+    Returns each model version's mean absolute error for each lead.
+
+    Args:
+        days (int): How many days to score, counted back from the last measured day.
+
+    Returns:
+        pd.DataFrame: One row per model version and lead, with the error (`mae`),
+            the number of days scored (`days`) and the version's alias.
+    """
     daily = _scan(TABLES[DailyAirQuality])
     joined = errors(_scan(PREDICTIONS), daily)
     if not daily.empty:
@@ -108,8 +175,18 @@ def model_error(days: int = 30) -> pd.DataFrame:
 
 
 def error_by_lead(days: int = 30) -> pd.DataFrame:
-    """One row per lead: the champion's and the challenger's MAE and which is lower,
-    so a reader need not compare the numbers."""
+    """
+    Returns the champion's and the challenger's error side by side, for each lead.
+
+    The lower one is named, so the reader does not have to compare the numbers.
+
+    Args:
+        days (int): How many days to score, counted back from the last measured day.
+
+    Returns:
+        pd.DataFrame: One row per lead, with `champion_mae`, `challenger_mae` and
+            `lower_error`. A missing model gives NaN.
+    """
     table = model_error(days)
     table = table[table["alias"] != ""]
     wide = table.pivot(index="lead_days", columns="alias", values="mae")
@@ -124,6 +201,16 @@ def error_by_lead(days: int = 30) -> pd.DataFrame:
 
 
 def _lower(champion: float, challenger: float) -> str:
+    """
+    Names the model with the lower error.
+
+    Args:
+        champion (float): The champion's error, NaN when it has none.
+        challenger (float): The challenger's error, NaN when it has none.
+
+    Returns:
+        str: "champion", "challenger" or "equal". A model without an error loses.
+    """
     if pd.isna(challenger):
         return CHAMPION
     if pd.isna(champion):

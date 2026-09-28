@@ -6,7 +6,7 @@ from airq.models import Observation, Prediction
 
 
 def test_schema_matches_each_model():
-    """Every model field becomes a required column; timestamps are UTC."""
+    """Verify that every model field becomes a required column, with timestamps in UTC."""
     for model in [*TABLES, Prediction]:
         schema = arrow_schema(model)
         assert schema.names == list(model.model_fields)

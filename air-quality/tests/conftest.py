@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from airq.config import DEFAULT_SEED
-from airq.generator import generate
+from airq.feature.generator import generate
 
 ORIGIN = datetime(2024, 10, 1, tzinfo=UTC)  # a fixed first hour, so results do not move
 

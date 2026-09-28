@@ -1,10 +1,12 @@
-"""Feature pipeline DAGs.
+"""Defines the feature pipeline DAGs.
 
-- airq_backfill: triggered by hand, writes the last `n_days` of history with `seed`.
-- airq_daily: runs once a day and loads the day before; a manual run can name the day.
+- airq_backfill: started by hand. It writes the last `n_days` of history, generated with
+  `seed`.
+- airq_daily: runs once a day and loads the day before. A manual run can name the day.
+  Each run marks the daily features asset as updated, which starts airq_inference.
 
-The `airq` package is uploaded beside this file, and dynamic-des is installed
-through `_AIRFLOW_PIP_DEPS`.
+The `airq` package is uploaded next to this file. `_AIRFLOW_PIP_DEPS` installs
+dynamic-des in the Airflow container.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -27,7 +29,7 @@ _DAILY_FEATURES = Asset(DAILY_FEATURES_ASSET)
 def airq_backfill():
     @task
     def backfill(params=None):
-        from airq.backfill import backfill
+        from airq.feature.backfill import backfill
 
         backfill(params["n_days"], params["seed"])
 
@@ -48,8 +50,8 @@ def airq_daily():
     # Marks the daily features updated, which starts airq_inference for the day.
     @task(outlets=[_DAILY_FEATURES])
     def daily(params=None, dag_run=None, outlet_events=None):
-        from airq.daily import run
         from airq.days import resolve
+        from airq.feature.daily import run
 
         yesterday = (dag_run.run_after - timedelta(days=1)).date()
         day = resolve(params["date"]) if params["date"] else yesterday

@@ -20,13 +20,12 @@ def test_each_hour_issues_one_forecast_per_lead(simulate):
             assert 0 <= row.wind_direction_10m < 360
 
 
-def test_observations_are_hourly_and_arrive_after_the_hour(simulate):
-    """Verify that readings are hourly and arrive one hour after the hour they measure."""
+def test_observations_are_hourly(simulate):
+    """Verify that readings are on the hour and never negative."""
     observations = [r for r in simulate(days=3) if isinstance(r, Observation)]
     assert observations, "no observations in three days"
     for row in observations:
         assert row.measured_at.minute == 0 and row.pm2_5 >= 0
-        assert row.ingested_at == row.measured_at + timedelta(hours=1)
 
 
 def test_same_seed_gives_the_same_rows(simulate):

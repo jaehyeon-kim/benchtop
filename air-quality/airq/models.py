@@ -21,13 +21,11 @@ class Observation(BaseModel):
         location_id (str): The station.
         measured_at (AwareDatetime): The start of the hour measured.
         pm2_5 (float): The measured PM2.5 in µg/m³, from 0 to 500.
-        ingested_at (AwareDatetime): When the reading arrived, at the end of the hour.
     """
 
     location_id: str
     measured_at: AwareDatetime
     pm2_5: float = _PM2_5
-    ingested_at: AwareDatetime
 
 
 class WeatherForecast(BaseModel):
@@ -47,8 +45,6 @@ class WeatherForecast(BaseModel):
             0 to 400.
         wind_direction_10m (float): The wind direction in degrees, from 0 up to but not
             including 360.
-        ingested_at (AwareDatetime): When the forecast arrived, which is when it was
-            made.
     """
 
     location_id: str
@@ -59,7 +55,6 @@ class WeatherForecast(BaseModel):
     precipitation: float = Field(ge=0, le=500)  # mm in an hour
     wind_speed_10m: float = Field(ge=0, le=400)  # km/h
     wind_direction_10m: float = Field(ge=0, lt=360)  # degrees
-    ingested_at: AwareDatetime
 
 
 class DailyWeather(BaseModel):

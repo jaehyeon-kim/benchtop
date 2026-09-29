@@ -34,14 +34,14 @@ def test_daily_features_average_complete_days():
     day = datetime(2026, 9, 5, tzinfo=UTC)  # a Saturday
     observations = [
         Observation(location_id=STATION, measured_at=day + timedelta(hours=h),
-                    pm2_5=10.0 if h < 0 else 4.0, ingested_at=day)
+                    pm2_5=10.0 if h < 0 else 4.0)
         for h in range(-24, 24)
     ]  # fmt: skip
     forecasts = [
         WeatherForecast(
             location_id=STATION, forecast_for=day + timedelta(hours=h), issued_at=day - timedelta(days=1),
             lead_days=1, temperature_2m=float(h), precipitation=0.5 if h < 3 else 0.0,
-            wind_speed_10m=10.0, wind_direction_10m=0.0, ingested_at=day,
+            wind_speed_10m=10.0, wind_direction_10m=0.0,
         )
         for h in range(24)
     ]  # fmt: skip

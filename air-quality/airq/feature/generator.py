@@ -111,7 +111,6 @@ def weather_forecast(
         precipitation=round(truth["rain"] * math.exp(rng.normal(0, 0.3 + 0.1 * lead)), 1),
         wind_speed_10m=round(wind * math.exp(rng.normal(0, 0.1 + 0.03 * lead)), 1),
         wind_direction_10m=round(truth["direction"] + rng.normal(0, 35 + 5 * lead)) % 360,
-        ingested_at=issued,
     )  # fmt: skip
 
 
@@ -131,7 +130,7 @@ def observation(rng: Generator, hour: datetime, truth: dict) -> Observation:
         truth (dict): The true state of the hour.
 
     Returns:
-        Observation: The reading, sent one hour after the hour starts.
+        Observation: The reading.
     """
     _, wind = actual(hour, truth)
     log_pm = (2.05 + 0.4 * (hour.weekday() < 5) + 0.12 * wave(hour, 24, 17) - 0.1 * (wind - 10)
@@ -141,7 +140,6 @@ def observation(rng: Generator, hour: datetime, truth: dict) -> Observation:
         location_id=STATION,
         measured_at=hour,
         pm2_5=round(max(pm, 0.0), 2),
-        ingested_at=hour + timedelta(hours=1),  # sent when the hour is complete
     )
 
 

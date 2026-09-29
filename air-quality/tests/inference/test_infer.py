@@ -1,9 +1,10 @@
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import pandas as pd
 
 from airq.config import LEADS, STATION
-from airq.inference.infer import _entity_rows, _predictions, errors
+from airq.inference.infer import _entity_rows, _feature_request, _predictions, errors
 
 
 def test_entity_rows_ask_for_the_forecast_issued_on_the_as_of_date():
@@ -40,3 +41,23 @@ def test_errors_cover_only_days_with_a_reading():
     joined = errors(predictions, observed)
     assert list(joined.lead_days) == [1]
     assert joined.abs_error.iloc[0] == 3.0
+
+
+def test_v1_alone_requests_only_the_weather_view():
+    """Verify that with only v1 served, inference asks Feast for no calendar_v2 feature."""
+    references, columns = _feature_request(
+        [SimpleNamespace(tags={"feature_set": "v1"})]
+    )
+    assert references and all(r.startswith("weather_v1:") for r in references)
+    assert "is_weekend" not in columns
+
+
+def test_v1_and_v2_request_each_feature_once():
+    """Verify that with v1 and v2 served, each feature is requested once."""
+    served = [
+        SimpleNamespace(tags={"feature_set": "v1"}),
+        SimpleNamespace(tags={"feature_set": "v2"}),
+    ]
+    references, columns = _feature_request(served)
+    assert "calendar_v2:is_weekend" in references
+    assert len(references) == len(set(references)) and columns[-1] == "is_weekend"

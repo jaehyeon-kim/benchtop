@@ -13,10 +13,12 @@ names.
 The registry is in PostgreSQL, where the Feast UI reads it. There is no online store,
 because nothing is served online.
 
-Run after changing a definition: python -m airq.store
+Run after changing a definition: python -m airq.store --version v1   (or v2)
 """
 
+import argparse
 import os
+import warnings
 from datetime import timedelta
 
 import pandas as pd
@@ -36,6 +38,11 @@ from feast.on_demand_feature_view import on_demand_feature_view
 from feast.types import Float64, Int32, Int64, UnixTimestamp
 
 from airq.config import CATALOG, FEAST_PROJECT, NAMESPACE
+
+# calendar_v2 is an on-demand view, which Feast labels experimental.
+warnings.filterwarnings(
+    "ignore", "On demand feature view is an experimental feature", RuntimeWarning
+)
 
 station = Entity(name="station", join_keys=["location_id"], value_type=ValueType.STRING)
 lead = Entity(name="lead", join_keys=["lead_days"], value_type=ValueType.INT32)
@@ -129,9 +136,22 @@ def store() -> FeatureStore:
     )
 
 
+# The Feast objects each version needs. v2 adds calendar_v2 to v1's.
+VERSION_OBJECTS = {
+    "v1": [station, lead, daily_weather, weather_v1],
+    "v2": [station, lead, daily_weather, weather_v1, calendar, calendar_v2],
+}
+
+
 if __name__ == "__main__":
-    store().apply([station, lead, daily_weather, weather_v1, calendar, calendar_v2])
-    print(
-        f"Applied project {FEAST_PROJECT}: entities station, lead; "
-        "views weather_v1, calendar_v2"
+    parser = argparse.ArgumentParser(
+        description="Registers the Feast entities and views a model version needs."
     )
+    parser.add_argument("--version", required=True, choices=list(VERSION_OBJECTS))
+    args = parser.parse_args()
+    objects = VERSION_OBJECTS[args.version]
+    store().apply(objects)
+    views = ", ".join(
+        o.name for o in objects if o.name.startswith(("weather", "calendar_"))
+    )
+    print(f"Applied project {FEAST_PROJECT} for {args.version}: views {views}")

@@ -132,6 +132,26 @@ def _served_versions(model_name: str) -> list:
     return versions
 
 
+def _feature_request(served: list) -> tuple[list[str], list[str]]:
+    """
+    Lists the Feast features and columns the served versions need.
+
+    Only these views are requested, so inference works before v2's view is registered.
+
+    Args:
+        served (list): The served model versions, from `_served_versions`.
+
+    Returns:
+        tuple[list[str], list[str]]: The feature references and the column names, each
+            listed once.
+    """
+    # Versions registered before v2 carry no tag; they are v1.
+    sets = [FEATURE_SETS[v.tags.get("feature_set", "v1")] for v in served]
+    references = list(dict.fromkeys(r for refs, _ in sets for r in refs))
+    columns = list(dict.fromkeys(c for _, cols in sets for c in cols))
+    return references, columns
+
+
 def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
     """
     Predicts PM2.5 for the seven days after `as_of` with every served model version.
@@ -152,10 +172,8 @@ def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
         SystemExit: If the forecast issued on `as_of` is incomplete, or no version is
             the champion.
     """
-    references = list(
-        dict.fromkeys(r for refs, _ in FEATURE_SETS.values() for r in refs)
-    )
-    columns = list(dict.fromkeys(c for _, cols in FEATURE_SETS.values() for c in cols))
+    served = _served_versions(model_name)
+    references, columns = _feature_request(served)
     features = (
         store()
         .get_historical_features(entity_df=_entity_rows(as_of), features=references)
@@ -169,8 +187,7 @@ def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
         )
     features = features.astype({column: "float64" for column in columns})
     rows = []
-    for version in _served_versions(model_name):
-        # Versions registered before v2 carry no tag; they are v1.
+    for version in served:
         inputs = FEATURE_SETS[version.tags.get("feature_set", "v1")][1]
         model = mlflow.pyfunc.load_model(f"models:/{model_name}/{version.version}")
         predicted = model.predict(features[inputs])

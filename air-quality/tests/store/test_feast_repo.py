@@ -1,4 +1,5 @@
 import runpy
+import sys
 
 import feast
 import pandas as pd
@@ -22,10 +23,7 @@ def test_v2_adds_the_weekend_flag_to_v1():
     assert v2_columns == [*v1_columns, "is_weekend"]
 
 
-# This file already imported feast_repo, so runpy warns when it runs it again.
-@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
-def test_python_m_airq_store_applies_both_views(monkeypatch):
-    """Verify that `python -m airq.store` applies both feature views."""
+def _apply(monkeypatch, version):
     applied = []
 
     class FakeStore:
@@ -37,5 +35,20 @@ def test_python_m_airq_store_applies_both_views(monkeypatch):
 
     monkeypatch.setattr(feast, "FeatureStore", FakeStore)
     monkeypatch.setenv("FEAST_REGISTRY", "sqlite://")
+    monkeypatch.setattr(sys, "argv", ["airq.store", "--version", version])
     runpy.run_module("airq.store", run_name="__main__", alter_sys=True)
-    assert {"weather_v1", "calendar_v2"} <= set(applied)
+    return set(applied)
+
+
+# This file already imported feast_repo, so runpy warns when it runs it again.
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_python_m_airq_store_v1_applies_only_the_weather_view(monkeypatch):
+    """Verify that `python -m airq.store --version v1` applies weather_v1 and not calendar_v2."""
+    applied = _apply(monkeypatch, "v1")
+    assert "weather_v1" in applied and "calendar_v2" not in applied
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_python_m_airq_store_v2_applies_both_views(monkeypatch):
+    """Verify that `python -m airq.store --version v2` applies both feature views."""
+    assert {"weather_v1", "calendar_v2"} <= _apply(monkeypatch, "v2")

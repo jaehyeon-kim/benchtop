@@ -1,5 +1,6 @@
 """Connects to the Iceberg catalog and derives the table schemas from the pydantic models."""
 
+import warnings
 from datetime import date
 
 import pyarrow as pa
@@ -7,6 +8,11 @@ from pydantic import AwareDatetime, BaseModel
 from pyiceberg.catalog import Catalog, load_catalog
 
 from airq.config import CATALOG, NAMESPACE, PREDICTIONS, TABLES
+
+# An overwrite of a day or an as-of date that has no rows yet is expected.
+warnings.filterwarnings(
+    "ignore", "Delete operation did not match any records", UserWarning
+)
 
 _TS = pa.timestamp("us", tz="UTC")
 _ARROW = {

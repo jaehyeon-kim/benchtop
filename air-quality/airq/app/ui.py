@@ -143,7 +143,10 @@ def _error_table() -> tuple[list[dict], list[dict]]:
         tuple[list[dict], list[dict]]: The table's columns and rows, in the form
             `ui.table` takes.
     """
-    table = reports.model_error(_ERROR_DAYS)
+    # A version holding both aliases has a row under each; the table needs one.
+    table = reports.model_error(_ERROR_DAYS).drop_duplicates(
+        ["lead_days", "model_version"]
+    )
     wide = table.pivot(index="lead_days", columns="model_version", values="mae")
     names = ["lead_days", *(f"v{v}" for v in wide.columns)]
     columns = [{"name": n, "label": n, "field": n} for n in names]

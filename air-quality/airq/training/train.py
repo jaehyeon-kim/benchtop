@@ -1,4 +1,4 @@
-"""Trains v1 and v2 on Feast features and registers both in MLflow.
+"""Trains one model version, v1 or v2, on Feast features and registers it in MLflow.
 
 The labels come from `daily_air_quality`. `pm2_5` is the target. `pm2_5_lag1`, the
 previous day's mean, is the baseline's prediction. v1 uses Feast's `weather_v1` view,
@@ -6,21 +6,22 @@ the forecast for each day issued the day before. v2 adds the weekend flag from t
 `calendar_v2` view.
 
 The days are split in time order: the earlier 80% train the model and the last 20% test
-it. Each model and the baseline are scored on the same test days. Each is also scored on
+it. The model and the baseline are scored on the same test days. Both are also scored on
 a random split of the same size, for comparison.
 
-Both versions are registered under `airq_pm25`. The new version of the champion's
-feature set gets the `champion` alias, and the other gets `challenger`. The champion is
-v1 until v2 is promoted, and a promotion survives retraining. Each model's run also logs
-a feature importance plot.
+Each version is registered under `airq_pm25`. The first one becomes the `champion`.
+After that, a new version of the champion's feature set becomes the new `champion`, and
+a version of the other feature set becomes the `challenger`. The run also logs a
+feature importance plot.
 
 Feast does not pin Iceberg snapshots. So the run reads each table's snapshot id before
 and after reading the data, and stops if they differ. It then tags the snapshots it
 read, so that snapshot expiry keeps them.
 
-Run: python -m airq.training
+Run: python -m airq.training --version v1   (or v2)
 """
 
+import argparse
 import logging
 
 import matplotlib
@@ -225,23 +226,25 @@ def _tag_snapshots(run_id: str, snapshots: dict[str, int]) -> dict[str, str]:
     return logged
 
 
-def roles() -> dict[str, str]:
+def role(name: str) -> str:
     """
-    Decides which alias each feature set's new version gets.
+    Decides which alias a feature set's new version gets.
 
-    The current champion's feature set keeps the `champion` alias, and the other set
-    gets `challenger`. When no champion is registered yet, v1 becomes the champion.
+    The first version registered becomes the champion. After that, a new version of the
+    champion's feature set becomes the new champion, and a version of any other feature
+    set becomes the challenger.
+
+    Args:
+        name (str): The feature set, `v1` or `v2`.
 
     Returns:
-        dict[str, str]: The alias of each feature set, such as `{"v1": "champion", "v2":
-            "challenger"}`.
+        str: `champion` or `challenger`.
     """
     try:
         version = mlflow.MlflowClient().get_model_version_by_alias(MODEL_NAME, CHAMPION)
-        current = version.tags.get("feature_set", "v1")
     except MlflowException:  # nothing registered yet
-        current = "v1"
-    return {name: CHAMPION if name == current else CHALLENGER for name in FEATURE_SETS}
+        return CHAMPION
+    return CHAMPION if version.tags.get("feature_set", "v1") == name else CHALLENGER
 
 
 def _register(name: str, alias: str, frame: pd.DataFrame, snapshots: dict[str, str]):
@@ -320,38 +323,43 @@ def split_table(results: dict[str, dict[str, float]]) -> pd.DataFrame:
     ).round(2)
 
 
-def train() -> dict[str, str]:
+def train(name: str) -> str:
     """
-    Trains, scores and registers v1 and v2.
+    Trains, scores and registers one feature set.
 
-    Everything is logged to MLflow in one run named `training`, with a nested run per
-    feature set.
+    Everything is logged to MLflow in one run named `training`, with a nested run for
+    the feature set. The baseline is scored on the same test days.
+
+    Args:
+        name (str): The feature set, `v1` or `v2`.
 
     Returns:
-        dict[str, str]: The new model version of each feature set.
+        str: The new model version.
 
     Raises:
         SystemExit: If a table changed while training read it.
     """
     before = _current_snapshots()
-    frame = training_frame(*FEATURE_SETS["v2"])  # v2's features include v1's
+    frame = training_frame(*FEATURE_SETS[name])
     if _current_snapshots() != before:
         raise SystemExit("A table changed while training read it: run training again.")
     mlflow.set_experiment(EXPERIMENT)
     with mlflow.start_run(run_name="training") as run:
         snapshots = _tag_snapshots(run.info.run_id, before)
         mlflow.set_tags(snapshots)
-        versions, results = {}, {}
-        for name, alias in roles().items():
-            versions[name], results[name] = _register(name, alias, frame, snapshots)
-        table = split_table(results)
+        version, metrics = _register(name, role(name), frame, snapshots)
+        table = split_table({name: metrics})
         mlflow.log_table(table, "split_comparison.json")
     logger.info(
         "MAE by split (run %s):\n%s", run.info.run_id, table.to_string(index=False)
     )
-    return versions
+    return version
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    train()
+    parser = argparse.ArgumentParser(
+        description="Trains and registers one model version."
+    )
+    parser.add_argument("--version", required=True, choices=list(FEATURE_SETS))
+    train(parser.parse_args().version)

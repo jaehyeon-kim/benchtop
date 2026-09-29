@@ -1,7 +1,11 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
+from mlflow.exceptions import MlflowException
 
-from airq.training.train import random_split, scores, split, split_table
+from airq.training import train
+from airq.training.train import random_split, role, scores, split, split_table
 
 
 def test_split_keeps_time_order_and_puts_the_last_days_in_test():
@@ -37,3 +41,32 @@ def test_split_table_puts_the_baseline_first():
     table = split_table({"v1": metrics, "v2": {**metrics, "mae": 0.5}})
     assert list(table["model"]) == ["baseline", "v1", "v2"]
     assert list(table["time_ordered_mae"]) == [3.0, 1.0, 0.5]
+
+
+def _champion(monkeypatch, feature_set):
+    class Client:
+        def get_model_version_by_alias(self, name, alias):
+            if feature_set is None:
+                raise MlflowException("no champion")
+            return SimpleNamespace(tags={"feature_set": feature_set})
+
+    monkeypatch.setattr(train.mlflow, "MlflowClient", Client)
+
+
+def test_first_version_becomes_the_champion(monkeypatch):
+    """Verify that the first version registered becomes the champion."""
+    _champion(monkeypatch, None)
+    assert role("v1") == "champion"
+
+
+def test_other_feature_set_becomes_the_challenger(monkeypatch):
+    """Verify that v2 becomes the challenger while v1 is the champion, and a new v1 stays champion."""
+    _champion(monkeypatch, "v1")
+    assert role("v2") == "challenger"
+    assert role("v1") == "champion"
+
+
+def test_after_promotion_v1_becomes_the_challenger(monkeypatch):
+    """Verify that once v2 is the champion, a new v1 version becomes the challenger."""
+    _champion(monkeypatch, "v2")
+    assert role("v1") == "challenger"

@@ -1,20 +1,24 @@
 # Results
 
-How well the models in the [README](../README.md) predict daily PM2.5, and why v2 has the features it has. Every error here is the mean absolute error (MAE) in µg/m³: how far a prediction is from the measured value, on average. The figures come from one run over 730 days of simulated data with seed 42. A backfill on another date covers other days, so its figures differ. The order stays the same: the baseline has the highest error and v2 the lowest, and `tests/training/test_ordering.py` checks that.
+How well each forecast in the [README](../README.md) predicts daily PM2.5, and why v2 has the features it has.
+
+Every error here is the mean absolute error (MAE) in µg/m³: how far a prediction is from the measured value, on average.
+
+The figures come from one run over 730 days of simulated data with seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. `tests/training/test_ordering.py` checks that.
 
 ## Models
 
-| Model | Predicts from | Added in |
-|---|---|---|
-| baseline | yesterday's measured PM2.5, used as the prediction for today | step 1 |
-| v1 | the weather forecast issued the day before: temperature, wind speed and hours of rain | step 1 |
-| v2 | v1's weather features plus a weekend flag | step 2 |
+| Model | Predicts from |
+|---|---|
+| baseline | yesterday's measured PM2.5, used as the prediction for today |
+| v1 | the weather forecast issued the day before: temperature, wind speed and hours of rain |
+| v2 | v1's weather features plus a weekend flag |
 
 v1 and v2 are XGBoost models with default settings. The baseline is not a trained model. It shows the error a model has to beat.
 
 ## Test scores
 
-Training holds out the last 20% of days (146 days) for testing, and scores each model on them:
+Training holds out the last 20% of days (146 days) for testing. v1 and v2 are trained in separate runs, on the same test days, and each run also scores the baseline on them:
 
 | Model | MAE |
 |---|---|
@@ -26,7 +30,7 @@ v1's error is well below the baseline's. PM2.5 follows the weather, and the fore
 
 v2's error is less than half of v1's. The simulation raises PM2.5 on weekdays, from traffic. The weather cannot show that, but the weekend flag can.
 
-The run also scores each model on a random 20% of days, and logs both scores as `split_comparison.json`:
+Each training run also scores its model and the baseline on a random 20% of days:
 
 | Model | last 20% of days | random 20% of days |
 |---|---|---|

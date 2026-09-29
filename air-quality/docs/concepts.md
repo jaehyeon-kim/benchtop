@@ -8,7 +8,7 @@ Start with the problem, not the model. Decide what to predict, who uses the pred
 
 Here the prediction is daily PM2.5 for the next seven days at one station. People use it through a dashboard and a chat assistant. The data is simulated weather forecasts and PM2.5 readings. The number is the mean absolute error (MAE): how far predictions were from what was later measured, on average.
 
-Build the smallest version that works end to end first, then improve it. Step 1 of the README is that smallest version; steps 2 and 3 improve it.
+Build the smallest version that works end to end first, then improve it. Here that version is v1, which predicts from the weather forecast alone. v2 then adds a weekend flag, and the app adds monitoring and a chat assistant.
 
 ## Feature, training and inference pipelines
 
@@ -89,13 +89,13 @@ An **alias** is a name pointing at one version:
 - `champion`: the version in use;
 - `challenger`: a version predicted beside it, for comparison.
 
-Changing or rolling back the model in use means pointing `champion` at another version. Nothing is redeployed.
+Here v1 is trained first and becomes the champion. v2 is trained later and becomes the challenger. Promoting v2 swaps the aliases, so v2 becomes the champion and v1 the challenger. Changing or rolling back the model in use means moving an alias to another version. Nothing is redeployed.
 
-## Batch inference, prediction logs and hindcasts
+## Batch inference and hindcasts
 
 Batch inference runs on a schedule, once a day here. Each run treats one date as "today", called the **as-of date**, and predicts the seven days after it.
 
-Each prediction is saved as a row in the Iceberg table `airq.predictions` (files on SeaweedFS under `s3://warehouse/airq/predictions`). A row records the as-of date, the day predicted, how many days ahead that is, and the model version.
+Every prediction is kept as a row in the Iceberg table `airq.predictions`. A row records the as-of date, the day predicted, how many days ahead that is, and the model version.
 
 When the readings for those days arrive, a **hindcast** compares them with the predictions. It shows how accurate each model was, and how accuracy changes with how far ahead it predicted.
 

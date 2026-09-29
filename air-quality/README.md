@@ -1,227 +1,330 @@
 # air-quality
 
-An ML system that forecasts daily PM2.5, a measure of fine-particle air pollution, for the next seven days from weather forecasts. It runs entirely on local services:
+An ML system that forecasts daily PM2.5, a measure of fine-particle air pollution, for the next seven days from weather forecasts. Everything runs on your own machine, and no step calls an external service.
 
-- **Data:** hourly weather forecasts and PM2.5 readings are simulated with [dynamic-des](https://jaehyeon-kim.github.io/dynamic-des/), a Python library that runs discrete-event simulations and writes their output to sinks such as Kafka, Postgres and Iceberg. Nothing calls an external service.
-- **Storage and features:** the data lands in Apache Iceberg tables, an open table format, stored on SeaweedFS, an S3-compatible object store. Feast, a feature store, defines daily features over those tables and serves the same values to training and prediction.
-- **Models:** XGBoost models are tracked in MLflow, whose model registry keeps each trained version and marks the one in use.
-- **Monitoring and assistant:** a NiceGUI web app with two tabs: charts of the forecast against what was measured, and a chat with a Strands agent, running on a local open model, that answers questions about it.
-- **Scheduling:** Apache Airflow runs the pipelines on a schedule.
-- **Infrastructure:** [odctl](https://github.com/jaehyeon-kim/odctl), a command-line tool that starts a local data stack (Kafka, Spark, Flink, Iceberg, Airflow, MLflow, Feast and more) with Docker Compose, runs every service here.
+The design follows the air quality project in Jim Dowling's [*Building Machine Learning Systems with a Feature Store*](https://www.oreilly.com/library/view/building-machine-learning/9781098165222/).
 
-The design follows the air quality project in Jim Dowling's [*Building Machine Learning Systems with a Feature Store*](https://www.oreilly.com/library/view/building-machine-learning/9781098165222/). [Concepts behind the design](docs/concepts.md) explains the ideas the system is built on and where the code uses them.
+More detail is in three documents:
+
+- [Concepts](docs/concepts.md): the ideas the system is built on, and where the code uses them.
+- [Data](docs/data.md): every table's columns, and example queries.
+- [Results](docs/results.md): how accurate each model is, and why v2 has the features it has.
 
 ## Architecture
 
-Three pipelines turn raw data into features, features into models, and features and a model into predictions. They never call each other; they share only a feature store and a model registry ([more in the concepts](docs/concepts.md#feature-training-and-inference-pipelines)). The **baseline** in the diagram is the simplest forecast, that today will be like yesterday; every model has to beat it.
-
 ![Feature, training and inference pipelines around the feature store and the model registry](images/architecture.png)
+
+Three pipelines do the work, and they never call each other:
+
+- The **feature pipeline** turns simulated weather forecasts and PM2.5 readings into daily features.
+- The **training pipeline** trains a model on those features.
+- The **inference pipeline** predicts the next seven days with the trained model.
+
+They share only two stores. The **feature store** holds the features, so training and prediction read the same values. The **model registry** holds every trained model and marks the one in use. [Concepts](docs/concepts.md#feature-training-and-inference-pipelines) explains why the pipelines are split this way.
+
+### What you will build
+
+**Step 1: v1, end to end**
+
+1. Backfill two years of history, up to yesterday.
+2. Register v1's features.
+3. Train v1. It becomes the model in use, called the champion.
+4. Forecast the next seven days.
+5. Load today's data, then forecast again.
+6. Do the same for tomorrow.
+7. Score v1's forecasts against what was measured.
+
+**Step 2: v2, improving the model with more features**
+
+1. Run a feature sweep. It chooses a weekend flag and rejects past PM2.5 readings.
+2. Register v2's features.
+3. Train v2. It becomes the challenger, which predicts beside the champion.
+4. Backtest both models over the last 60 days.
+5. Compare their errors.
+6. Promote v2 to champion.
+
+**Step 3: monitoring and assistant**
+
+1. Open the monitoring tab, which charts both models against the measured values.
+2. Ask the assistant a question.
+3. Load another day, forecast, and refresh the app.
+
+The three forecasts compared:
+
+| Forecast | Predicts from |
+|---|---|
+| baseline | yesterday's measured PM2.5, used as today's prediction |
+| v1 | the weather forecast: temperature, wind speed and hours of rain |
+| v2 | the weather forecast plus a weekend flag |
+
+The baseline is not a trained model. It is the error a model has to beat.
+
+### Tools
+
+| Tool | Role here |
+|---|---|
+| [dynamic-des](https://jaehyeon-kim.github.io/dynamic-des/) | simulates hourly weather forecasts and PM2.5 readings |
+| Apache Iceberg on SeaweedFS | stores every table; Iceberg is an open table format, and SeaweedFS is an S3-compatible object store |
+| Feast | the feature store |
+| XGBoost | the models |
+| MLflow | tracks training runs, and is the model registry |
+| Apache Airflow | runs the pipelines on a schedule |
+| NiceGUI, Strands and Ollama | the web app, its chat agent, and the local language model the agent uses |
+| [odctl](https://github.com/jaehyeon-kim/odctl) | starts all the services above with Docker Compose |
 
 ### Data
 
-The simulation writes two hourly Apache Iceberg tables, `weather_forecasts` and `observations` (the measured PM2.5), in the `airq` namespace of the REST catalog, with their files on SeaweedFS under `s3://warehouse/airq/<table>`. Both are keyed by `location_id`, a single simulated station. The pipelines build everything else from them. [data.md](docs/data.md) lists every table's columns and has example queries with Trino.
+The simulation writes two hourly tables, `weather_forecasts` and `observations` (the measured PM2.5), for a single simulated station. The feature pipeline builds everything else from them. [Data](docs/data.md) lists every table's columns and has example queries.
 
 ## Environment setup
 
+You need Docker (Docker Desktop, OrbStack or Docker Engine), [uv](https://docs.astral.sh/uv/) and Python 3.13. Run every command from this folder.
+
 ### Python environment
 
-Everything Python-side installs into one virtual environment from `requirements.txt`, including the `odctl` CLI. It also installs Airflow, Feast and MLflow at the versions the containers run, so the pipelines can run locally as well. Use Python 3.13. With [uv](https://docs.astral.sh/uv/), from this directory:
+One virtual environment holds everything, including the `odctl` command:
 
 ```bash
 uv venv                             # create .venv
-source .venv/bin/activate           # activate it (each new shell; Windows: .venv\Scripts\activate)
+source .venv/bin/activate           # activate it, in each new shell
 uv pip install -r requirements.txt
 ```
 
 ### Services
 
-odctl groups services into profiles, and `odctl up` starts the profiles you name. Three steps, in this order:
-
 ```bash
-# 1. copy the stack config into ./.odctl
+# 1. copy odctl's configuration into ./.odctl
 odctl init
 
-# 2. make the Airflow container install dynamic-des and dateparser, before the first `odctl up` creates it
-echo '_AIRFLOW_PIP_DEPS="dynamic-des[iceberg]>=0.14.0 dateparser==1.4.3"' >> .odctl/.env
+# 2. make the Airflow container install the packages the pipelines need
+printf '\n_AIRFLOW_PIP_DEPS="dynamic-des[iceberg]>=0.14.0 dateparser==1.4.3"\n' >> .odctl/.env
 
-# 3. start the profiles this project uses
+# 3. start the services
 odctl up catalog feast mlflow airflow
 ```
 
-`odctl init` copies odctl's compose files, configs and `.env` into `./.odctl`, and `odctl up` uses that copy. Step 2 must come before the first `odctl up`, because the setting reaches the Airflow container only when it is created. Run it again after `odctl init --force`, which restores the shipped `.env`. The profiles also start PostgreSQL and SeaweedFS, and three services this project does not use: Valkey, Feast's online feature server and MLflow's model server. The model server waits idle while `MODEL_URI` in `.odctl/.env` is empty.
+Run step 2 before the first `odctl up`, because Airflow reads the setting only when its container is created.
 
-| Service | Internal (Docker) | External (host) | Credentials |
-|---|---|---|---|
-| Iceberg REST catalog | `http://catalog:8181` | `http://127.0.0.1:8181` | none |
-| SeaweedFS S3 API | `http://seaweed:8333` | `http://127.0.0.1:8333` | `user` / `password` |
-| PostgreSQL | `postgres:5432` | `127.0.0.1:5432` | `user` / `password` |
-| Feast UI | `http://feast-ui:8888` | `http://127.0.0.1:8890` | none |
-| MLflow | `http://mlflow:5000` | `http://127.0.0.1:5004` | none |
-| Airflow UI | `http://airflow:8080` | `http://127.0.0.1:8085` | `user` / `password` |
+The web UIs:
 
-### Airflow
+- Airflow: http://127.0.0.1:8085, log in as `user` / `password`
+- MLflow: http://127.0.0.1:5004
+- Feast: http://127.0.0.1:8890
+- SeaweedFS file browser: http://127.0.0.1:8889
 
-Airflow runs every pipeline as a DAG, Airflow's name for a workflow. The DAG files are in `dags`, and Airflow reads them from `s3://airflow/dags` every 15 seconds. Upload `dags` and the `airq` package the tasks import, and upload again after changing either. `--delete` removes files you have deleted locally:
+The code also connects to the Iceberg catalog, SeaweedFS's S3 API and PostgreSQL. `airq/config.py` sets their addresses, so there is nothing to configure.
+
+## Step 1: v1 pipelines
+
+v1 predicts PM2.5 from the weather forecast alone. This step builds it end to end: data, features, a trained model and daily forecasts.
+
+### Backfill the history
+
+The feature pipeline writes four Iceberg tables in the `airq` namespace:
+
+- `weather_forecasts` and `observations`: the simulated hourly forecasts and PM2.5 readings.
+- `daily_weather`: the forecast for each day, averaged over its 24 hours. It has one row for each day and lead, where the lead is how many days ahead the forecast was made (1 to 7).
+- `daily_air_quality`: each day's mean PM2.5, which is what the models predict, with the weekend flag and the previous day's mean.
+
+The backfill creates the tables and fills them with the last `n_days` of data, up to the end of yesterday (UTC). It replaces any data already there, and deletes the predictions made from it. The data is generated from a seed (default 42), so the same seed always gives the same values:
+
+```bash
+python -m airq.feature.backfill --n-days 730 --seed 42
+```
+
+Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in `airq/models.py`.
+
+### Register v1's features
+
+Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in `airq/store/feast_repo.py`. Register it once, and again after changing it:
+
+```bash
+python -m airq.store --version v1
+```
+
+The Feast UI at http://127.0.0.1:8890 then shows the project `airq` with the `weather_v1` view.
+
+### Train v1
+
+The training pipeline trains v1 and registers it in MLflow as a new version of the model `airq_pm25`:
+
+- **Data:** each day's measured PM2.5, with the forecast issued the day before (lead 1).
+- **Test days:** the last 20% of days are held out. The model trains on the earlier days, so it never sees the days it is tested on.
+- **Scores:** MAE, RMSE and R² for v1 and for the baseline, on the same test days. MAE, the mean absolute error, is how far a prediction is from the measured value, on average. The run also logs a feature importance plot.
+- **Alias:** an alias is a name that points at one version. The first version registered becomes the `champion`, which the inference pipeline uses. Training v1 again makes the new version the champion.
+- **Reproducibility:** the run records which snapshot of each Iceberg table it read, and keeps those snapshots, so the same training data can be read again later.
+
+```bash
+python -m airq.training --version v1
+```
+
+The run is in MLflow at http://127.0.0.1:5004, under the experiment `airq`.
+
+### Forecast
+
+Each inference run treats one date as today, called the **as-of date**, and predicts the seven days after it. It reads the forecasts made on that date through Feast, predicts with the champion, and writes the results to the Iceberg table `predictions`. Running a date again replaces its predictions.
+
+```bash
+python -m airq.inference                                 # as of yesterday: today and the six days after it
+```
+
+### Load a day and forecast again
+
+The daily run adds one day to all four tables, yesterday by default. It uses the backfill's seed and first day, which the backfill stored on the tables, so it continues the same data. Running a day again replaces it.
+
+Because the data is simulated, the daily run can also load days that have not happened yet. That lets you move time forward one day at a time:
+
+```bash
+python -m airq.feature.daily --date today                # load today
+python -m airq.inference --as-of today                   # forecast the seven days after it
+python -m airq.feature.daily --date tomorrow             # load the next day
+python -m airq.inference --as-of tomorrow
+```
+
+A day can be written as `YYYY-MM-DD` or as people say it: `today`, `yesterday`, `"3 days ago"`, `"last monday"` or `"20 September"`, all in UTC. The Airflow parameters and the app's chat accept the same phrases.
+
+### Score the forecasts
+
+The hindcast compares the predictions with the PM2.5 measured since, and reports each model version's mean absolute error by lead and by as-of date:
+
+```bash
+python -m airq.inference --hindcast
+```
+
+### Run it in Airflow
+
+Airflow runs the same pipelines on a schedule, as an alternative to the commands above. Its backfill replaces the data those commands wrote. Airflow runs each pipeline as a DAG, its name for a workflow. It loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds.
+
+Copy the `dags` folder and the `airq` package its tasks import there, and copy them again whenever you change either:
 
 ```bash
 export AWS_ACCESS_KEY_ID=user AWS_SECRET_ACCESS_KEY=password AWS_DEFAULT_REGION=us-east-1
 aws --endpoint-url http://127.0.0.1:8333 s3 sync . s3://airflow/dags --exclude "*" --include "airq/*.py" --include "dags/*.py" --delete
 ```
 
-In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it and fill in the form. The Airflow CLI in the container does the same from the terminal, and shows why a DAG is missing:
+`--delete` removes files you have deleted locally.
+
+The DAGs:
+
+| DAG | Runs | Parameters |
+|---|---|---|
+| `airq_backfill` | when triggered | `n_days` (730), `seed` (42) |
+| `airq_daily` | every day at 00:00 UTC, for the day before | `date`, `seed`: when triggered |
+| `airq_training` | when triggered | `version` (v1 or v2, default v1) |
+| `airq_inference` | after each `airq_daily` run, for the day it loaded, and after each `airq_training` run, for the day before | `as_of`: when triggered |
+
+In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), they appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_daily` is first unpaused, it runs straight away for the most recent day.
+
+The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote:
 
 ```bash
-docker exec airflow airflow dags list-import-errors
-```
-
-## Step 1: v1 pipelines
-
-Step 1 describes v1, the weather-only model. The code already includes step 2: registering the Feast views also registers v2's `calendar_v2`, and training also trains v2. [Step 2](#step-2-v2-pipelines) explains both.
-
-### Feature pipeline
-
-The feature pipeline writes the two hourly tables and turns them into two daily tables of features, which Feast reads: `daily_weather` (one row per day and lead) and `daily_air_quality` (the day's mean PM2.5, the target). Their columns are in [data.md](docs/data.md#daily-tables).
-
-It runs in two ways, each from the terminal or from Airflow. The same first day and seed always generate the same values. The backfill stores both on the tables, and the daily run reads them back, so the two write the same values for the same day.
-
-- **Backfill:** drops and recreates the four tables, and drops any predictions, which were made from the data being replaced. It then generates the last `n_days` up to the end of yesterday (UTC), with `seed` (default 42). The hourly rows go through dynamic-des's Iceberg writer, and the daily rows are written with PyIceberg.
-- **Daily run:** loads one day into all four tables, yesterday (UTC) by default, with the backfill's seed unless `--seed` names another. A different seed gives the day values that do not continue from the days around it. The day cannot be before the backfill's first day. Each table gets one overwrite filtered to that day, so running a day again replaces it.
-
-Every row is checked against the bounds in `airq/models.py` as it is built, such as PM2.5 between 0 and 500, so a run stops before writing an impossible value.
-
-Days can be named the way people say them, as well as `YYYY-MM-DD`: `yesterday`, `"3 days ago"`, `"a week ago"`, `"last monday"` or `"20 September"`, all in UTC. The same phrases work in the Airflow parameters and in the assistant. From the terminal:
-
-```bash
-python -m airq.feature.backfill --n-days 730 --seed 42
-python -m airq.feature.daily                              # yesterday
-python -m airq.feature.daily --date "3 days ago"
-python -m airq.feature.daily --date "3 days ago" --seed 7
-```
-
-From Airflow, `dags/airq_feature_pipeline.py` defines `airq_backfill`, which runs only when triggered, with `n_days` and `seed` parameters, and `airq_daily`, which runs at 00:00 UTC for the day before, or for the day in its `date` parameter when triggered, with an optional `seed`. When `airq_daily` is first unpaused, it runs straight away for the most recent day. From the terminal:
-
-```bash
+# 1. the backfill
 docker exec airflow airflow dags unpause airq_backfill
 docker exec airflow airflow dags trigger airq_backfill --conf '{"n_days": 730, "seed": 42}'
-docker exec airflow airflow dags unpause airq_daily
-docker exec airflow airflow dags trigger airq_daily --conf '{"date": "3 days ago"}'
-docker exec airflow airflow dags list-runs airq_backfill       # the state of each run
-```
+docker exec airflow airflow dags list-runs airq_backfill        # wait for success
 
-Feast reads the daily tables through the feature view in `airq/store/feast_repo.py`, `weather_v1`, over `daily_weather`. Register it once, and again after changing it:
-
-```bash
-python -m airq.store
-```
-
-The Feast UI at http://127.0.0.1:8890 then shows the project `airq` with the `station` and `lead` entities and the `weather_v1` view.
-
-### Training pipeline
-
-The training pipeline trains v1 and scores it against the baseline, which predicts today as yesterday.
-
-- **Data:** the target, `pm2_5`, and the baseline's prediction, `pm2_5_lag1`, come from `daily_air_quality`. The features come from Feast's `weather_v1` view: for each day, the forecast issued the day before (lead 1).
-- **Split:** the days are split in time order. The model trains on the earlier 80% and is tested on the last 20%, so it never sees the future.
-- **Model:** an XGBoost regressor on default settings. MLflow records MAE, RMSE and R² for v1 and for the baseline on the same test days, and a feature importance plot.
-- **Registry:** each run registers a new version of `airq_pm25` in MLflow and gives it the alias `champion`, which the inference pipeline loads. Step 2 adds v2 to the same run.
-- **Reproducibility:** Feast does not pin table versions, so the run records the Iceberg snapshot of each table before and after reading, stops if a commit landed in between, and tags the snapshots it read so they outlive cleanup.
-
-From the terminal:
-
-```bash
-python -m airq.training
-python -m airq.inference        # so the new versions have a forecast
-```
-
-From Airflow, `dags/airq_training_pipeline.py` defines `airq_training`, which runs only when triggered. When it finishes, it starts the inference pipeline for the day before by itself:
-
-```bash
-docker exec airflow airflow dags unpause airq_training
-docker exec airflow airflow dags trigger airq_training
-```
-
-The runs and registered versions are in MLflow at http://127.0.0.1:5004, under the experiment `airq` and the model `airq_pm25`.
-
-### Inference pipeline
-
-The inference pipeline predicts PM2.5 for the seven days after an **as-of date**, the date a run treats as today. It reads the forecasts made on that date through Feast, predicts with the `champion` model (and, from step 2, the `challenger` beside it), and writes the results to the Iceberg table `predictions` ([columns](docs/data.md#predictions)). Running a date again replaces its predictions.
-
-When the readings for a predicted day arrive, the hindcast compares them with the predictions made earlier and reports each model version's mean absolute error by lead and by as-of date.
-
-From the terminal, for yesterday (UTC) or a named date, then the hindcast:
-
-```bash
-python -m airq.inference
-python -m airq.inference --as-of "3 days ago"
-python -m airq.inference --hindcast
-```
-
-A backtest is a run for each of a range of past dates: `--days 3` runs the three as-of dates ending at `--as-of`, or at yesterday without it. The hindcast then scores the days whose readings have arrived.
-
-From Airflow, `dags/airq_inference_pipeline.py` defines `airq_inference`. It starts by itself after each `airq_daily` run, for the day loaded, and after each `airq_training` run, for the day before. Triggered by hand, it runs for the day in its `as_of` parameter:
-
-```bash
+# 2. v1's training; inference follows by itself
 docker exec airflow airflow dags unpause airq_inference
-docker exec airflow airflow dags trigger airq_inference --conf '{"as_of": "3 days ago"}'
+docker exec airflow airflow dags unpause airq_training
+docker exec airflow airflow dags trigger airq_training --conf '{"version": "v1"}'
+docker exec airflow airflow dags list-runs airq_inference       # wait for success
+
+# 3. the daily run; inference follows by itself
+docker exec airflow airflow dags unpause airq_daily
+docker exec airflow airflow dags trigger airq_daily --conf '{"date": "today"}'
+docker exec airflow airflow dags list-runs airq_inference       # wait for success
 ```
+
+Unpause `airq_daily` only after the backfill, because it runs straight away for the most recent day and needs the tables. If a DAG is missing, `docker exec airflow airflow dags list-import-errors` shows why.
+
+Each command also prints OpenTelemetry warnings and errors, because odctl turns on Airflow's metrics without starting the service that collects them. They do no harm. To hide them, add `-e AIRFLOW__METRICS__OTEL_ON=False` after `docker exec`.
 
 ## Step 2: v2 pipelines
 
-Step 2 adds a second model, v2, beside v1. The measurements behind every choice below are in [results.md](docs/results.md).
+v2 improves v1 with more features. This step finds which features help, adds them, and compares v2 with v1 before putting it in use.
 
-### Feature pipeline
+### Choose the features
 
-A feature sweep tests which daily features are worth adding to the weather. It records its results in MLflow as a run named `feature-sweep`:
+The feature sweep tests which daily features to add to the weather. It adds one candidate at a time, and scores each set with the same model on the same days. It records its results in MLflow as a run named `feature-sweep`, and registers no model:
 
 ```bash
-python -m airq.training.sweep                   # the stored data plus seeds 0 to 4
+python -m airq.training.sweep                            # the stored data plus seeds 0 to 4
 ```
 
-It finds that a weekend flag cuts the error by nearly two thirds, because the simulation raises PM2.5 on weekdays. Past PM2.5 readings, from one to seven days back, add nothing. So v2 is the weather plus the weekend flag.
+It finds that a weekend flag cuts the error by nearly two thirds, because the simulation raises PM2.5 on weekdays. Past PM2.5 readings, from one to seven days back, add nothing. So v2 is the weather plus the weekend flag. The measurements are in [Results](docs/results.md).
 
-Feast serves the flag through a second view, `calendar_v2`, which works it out from each day's date ([why](docs/concepts.md#three-kinds-of-data-transformation)). Register both views:
+### Register v2's features
+
+v2 reads two views, defined in `airq/store/feast_repo.py`:
+
+| View | Features | Used by |
+|---|---|---|
+| `weather_v1` | temperature, wind speed and hours of rain, from `daily_weather` | v1 and v2 |
+| `calendar_v2` | the weekend flag | v2 only |
+
+The two views get their values in different ways:
+
+| | Stored feature: `weather_v1` | On-demand feature: `calendar_v2` |
+|---|---|---|
+| Computed | by the feature pipeline, before anyone asks | by Feast, each time training or inference asks |
+| Computed from | the hourly weather forecasts | the date of the day asked for |
+| Kept | in the Iceberg table `daily_weather` | nowhere |
+
+Most features are stored, because they are built from other data, which takes time and is done once. A feature that follows from the request alone, such as whether a date is a Saturday or Sunday, can be computed on demand instead. Here it has to be. `daily_air_quality` also has a weekend flag, but only for days that have been measured, and inference predicts days that have not happened yet. [Concepts](docs/concepts.md#three-kinds-of-data-transformation) explains the kinds of feature in more detail.
+
+Register v2's views. `weather_v1` is unchanged, so v1 keeps working:
 
 ```bash
-python -m airq.store
+python -m airq.store --version v2
 ```
 
-### Training pipeline
+### Train v2
 
-The same command and DAG as in step 1 train both models, v1 on the weather and v2 on the weather and the weekend flag. The new version of the feature set the champion already uses becomes the new `champion`, and the other becomes the `challenger`. On the held-out test days of the run in [results.md](docs/results.md#test-scores), the mean absolute error is 3.40 for the baseline, 2.06 for v1 and 0.71 for v2. Other backfills give other figures, in the same order.
-
-v1 stays the champion until you promote v2, in the MLflow UI or with:
+Training v2 works as for v1, on the same test days, and scores the baseline again. v2 has a different feature set from the champion, so it becomes the `challenger`. Inference then predicts with both models, and writes both to `predictions`, told apart by `model_version`:
 
 ```bash
-python -c "import airq.config, mlflow; mlflow.MlflowClient().set_registered_model_alias('airq_pm25', 'champion', '<v2 version>')"
+python -m airq.training --version v2
 ```
 
-A promotion survives retraining.
+In Airflow, trigger `airq_training` with `{"version": "v2"}`.
 
-### Inference pipeline
+### Compare v1 and v2
 
-Inference predicts with both the champion and the challenger, and both write to `predictions`, told apart by `model_version`. A backtest runs inference for a range of past dates, so the charts in step 3 have history:
+A backtest runs inference for each of a range of past dates, so both models have predictions for days that have been measured. The hindcast then scores them:
 
 ```bash
-python -m airq.inference --days 60
+python -m airq.inference --days 60                       # each of the last 60 days
 python -m airq.inference --hindcast
 ```
 
+On the held-out test days of the run in [Results](docs/results.md#test-scores), the mean absolute error is 3.40 for the baseline, 2.06 for v1 and 0.71 for v2. Other backfills give other figures, in the same order.
+
+### Promote v2
+
+Promotion swaps the two aliases: v2 becomes the champion, and v1 becomes the challenger. Inference keeps predicting with both, so the app can still compare them.
+
+```bash
+python -m airq.training.promote
+python -m airq.inference                                 # forecast with v2 as the champion
+```
+
+A promotion carries over to later training runs: training v2 again keeps it the champion, and training v1 again makes the new v1 the challenger.
+
 ## Step 3: Monitoring and assistant
 
-One web app, built with [NiceGUI](https://nicegui.io/), a Python framework that serves the page and the code behind it from one process. It has two tabs:
+One web app, built with [NiceGUI](https://nicegui.io/), a Python framework that serves a web page and the code behind it from one process. It has two tabs:
 
 - **Monitoring:** the forecast against what was measured, and how accurate each model has been.
 - **Assistant:** a chat that answers questions about the forecast, such as "what is the forecast for tomorrow?".
 
 ![The app's two tabs, the assistant, the local model and the shared queries over Iceberg and MLflow](images/app.png)
 
-Both tabs use the same queries in `airq/app/reports.py`, so a number in the chat always matches the charts. The page is in `airq/app/ui.py` and the agent in `airq/app/assistant.py`.
+Both tabs use the same queries, in `airq/app/reports.py`, so a number in the chat always matches the charts.
 
 ### Before you start
 
-1. **The odctl services running,** as in [Services](#services).
-2. **Predictions to show:** run the backtest from step 2, `python -m airq.inference --days 60`.
-3. **Ollama running with the assistant's model.** [Ollama](https://ollama.com/) runs open language models on your own machine. Start the desktop app or `ollama serve`, then pull the model once:
+1. **Predictions to show:** the backtest from Step 2, `python -m airq.inference --days 60`.
+2. **Ollama, with the assistant's model.** [Ollama](https://ollama.com/) runs open language models on your own machine. Start the desktop app or `ollama serve`, then pull the model once:
 
    ```bash
    ollama pull qwen3:4b-instruct
@@ -241,11 +344,9 @@ Open http://127.0.0.1:8090. The header shows the model versions in use. To use a
 - **Daily error:** each model's one-day-ahead error, one bar per day.
 - **Error by lead:** each model's average error over the last 30 days, for predictions made 1 to 7 days ahead.
 
-**Refresh** reloads the charts after a new daily run.
-
 ### Assistant tab
 
-Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. The model picks a tool, the tool reads the data, and the model answers from the result, so every number comes from the data. Days can be named as people say them, such as "tomorrow", "3 days ago", "last Monday" or "this weekend".
+Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. For each question, the model picks a tool, the tool reads the data, and the model answers from the result, so every number comes from the data. The agent is in `airq/app/assistant.py`.
 
 Questions it answers well:
 
@@ -254,7 +355,18 @@ Questions it answers well:
 - What was the highest PM2.5 over the last seven days?
 - Which model has been more accurate over the last 30 days?
 
-The default model, `qwen3:4b-instruct`, is small and answers without a reasoning pass. If an answer is wrong, improve the tools or the prompt in `airq/app/assistant.py` rather than switching to a larger model.
+The default model, `qwen3:4b-instruct`, is small. If an answer is wrong, improve the tools or the prompt in `airq/app/assistant.py` rather than switching to a larger model.
+
+### Load another day
+
+With the app open, load a day and forecast from it in another terminal:
+
+```bash
+python -m airq.feature.daily --date "in 2 days"
+python -m airq.inference --as-of "in 2 days"
+```
+
+Press **Refresh** in the app, and the charts move forward one day.
 
 ### Troubleshooting
 
@@ -262,27 +374,23 @@ The default model, `qwen3:4b-instruct`, is small and answers without a reasoning
 |---|---|
 | The chat shows `The assistant failed: All connection attempts failed` | Ollama is not running: start the desktop app or `ollama serve`. |
 | The chat shows `The assistant failed: model '...' not found` | The model has not been pulled: run `ollama pull` with the name in `AIRQ_MODEL`, or the default. |
-| The charts or the error table are empty | No predictions yet: run the inference pipeline or the backtest in [Before you start](#before-you-start). |
+| The charts or the error table are empty | There are no predictions yet: run the backtest in [Before you start](#before-you-start). |
 | The header shows no model versions | No model is registered: run the training pipeline. |
 
 ## Tests
 
-The tests run without the odctl services:
+The tests need none of the services:
 
 ```bash
 python -m pytest tests
 ```
 
-GitHub runs them, with the repository's lint checks, on every push to `main` (see [Checks](../README.md#checks)).
+They cover the simulation and feature code, the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases and the assistant's tools. GitHub runs them, after the repository's lint checks, on every push to `main`.
 
-They cover the simulation and feature code, value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference requests, the champion and challenger handling, day phrases and the assistant's tools.
-
-## Tear down environment
+## Tear down
 
 ```bash
-odctl down --all --volumes
+odctl down --all --volumes          # answer y; --volumes also deletes the data
 deactivate
 rm -rf .venv
 ```
-
-`--volumes` deletes the data with the containers.

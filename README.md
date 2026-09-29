@@ -22,7 +22,7 @@ benchtop/
 The root holds the checks every project shares:
 - `.pre-commit-config.yaml`: file checks, [ruff](https://docs.astral.sh/ruff/) for linting and formatting, and mypy for types;
 - `ruff.toml`: tells ruff where each project's packages are;
-- `.github/workflows/pipeline.yml`: runs the pre-commit checks and each project's unit tests on GitHub on every push to `main`.
+- `.github/workflows/pipeline.yml`: on every push to `main`, runs the pre-commit checks, then each project's unit tests in a job of its own.
 
 To run the checks before each commit, or on every file:
 

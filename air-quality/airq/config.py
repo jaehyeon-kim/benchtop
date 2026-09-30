@@ -59,6 +59,10 @@ CHALLENGER = "challenger"  # alias of the version inference predicts beside it
 DAILY_FEATURES_ASSET = "airq_daily_features"
 # Airflow asset training updates; the inference DAG is scheduled on it too.
 MODELS_ASSET = "airq_models"
+# The DAGs in dags/, by id; the clean-up deletes their records in Airflow.
+DAG_IDS = ("airq_backfill", "airq_daily", "airq_training", "airq_inference")
+AIRFLOW_URL = "http://127.0.0.1:8085"  # the Airflow API, from the host
+AIRFLOW_USER, AIRFLOW_PASSWORD = "user", "password"
 
 # The forecast assistant's model: an Ollama model that supports tool calls,
 # pulled into the local Ollama server. Nothing is sent to a hosted model. The

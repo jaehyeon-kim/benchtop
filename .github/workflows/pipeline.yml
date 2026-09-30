@@ -34,6 +34,14 @@ jobs:
         include:
           - project: air-quality
             python: "3.13"
+          - project: ecommerce-cdc
+            python: "3.13"
+          - project: game-leaderboard
+            python: "3.13"
+          - project: live-dashboard
+            python: "3.13"
+          - project: product-recommender
+            python: "3.11"  # its pins need pandas 1.x, which has no wheels after 3.11
     name: unit-test (${{ matrix.project }})
     defaults:
       run:
@@ -55,3 +63,66 @@ jobs:
 
       - name: Run unit tests
         run: python -m pytest tests -q
+
+  # The Next.js dashboard's unit tests and type check, in parallel once lint passes.
+  node-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    name: node-test (live-dashboard/nextjs)
+    defaults:
+      run:
+        working-directory: live-dashboard/nextjs
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 11.20.0
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: live-dashboard/nextjs/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Check types
+        run: pnpm exec tsc --noEmit
+
+  # Each JVM build's unit tests, in parallel once lint passes.
+  jvm-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: product-recommender/recsys-trainer
+            tasks: test
+          - build: order-streams
+            tasks: test ktlintCheck
+    name: jvm-test (${{ matrix.build }})
+    defaults:
+      run:
+        working-directory: ${{ matrix.build }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+
+      - name: Run unit tests
+        run: ./gradlew ${{ matrix.tasks }}

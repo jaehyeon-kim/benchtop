@@ -1,4 +1,4 @@
 # Projects live in subfolders, so ruff needs to know where their packages are to
 # sort imports the same way from the repository root (pre-commit) and from inside
 # a project folder.
-src = ["air-quality"]
+src = ["air-quality", "ecommerce-cdc", "game-leaderboard", "live-dashboard", "product-recommender"]

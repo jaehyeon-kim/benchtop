@@ -10,6 +10,7 @@ repos:
         exclude: \.drawio$
       - id: check-yaml
       - id: check-added-large-files
+        args: [--maxkb=2000]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Match the ruff version used locally (uvx ruff@0.16.9); two versions of the
@@ -20,8 +21,28 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # One mypy run per project: projects are separate code bases, and one run over all of
+  # them fails on modules that share a name, such as tests/test_cleanup.py.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.1
     hooks:
       - id: mypy
+        name: mypy (air-quality)
+        files: ^air-quality/
+        args: [--ignore-missing-imports]
+      - id: mypy
+        name: mypy (ecommerce-cdc)
+        files: ^ecommerce-cdc/
+        args: [--ignore-missing-imports]
+      - id: mypy
+        name: mypy (game-leaderboard)
+        files: ^game-leaderboard/
+        args: [--ignore-missing-imports]
+      - id: mypy
+        name: mypy (product-recommender)
+        files: ^product-recommender/
+        args: [--ignore-missing-imports]
+      - id: mypy
+        name: mypy (live-dashboard)
+        files: ^live-dashboard/
         args: [--ignore-missing-imports]

@@ -3,15 +3,13 @@
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from xgboost import XGBRegressor
 
-from airq.config import DEFAULT_SEED
-from airq.store.feast_repo import FEATURE_SETS
-from airq.training.sweep import generated_frame
-from tests.conftest import ORIGIN
+from airq.feature_store import FEATURE_SETS
+from tests.conftest import daily_frame
 
 
 def test_v2_beats_v1_beats_predicting_yesterday():
     """Verify that v2 beats v1, and v1 beats predicting yesterday's value, on generated data."""
-    frame, _ = generated_frame(ORIGIN, n_days=720, seed=DEFAULT_SEED)
+    frame = daily_frame(n_days=720)
     frame = frame.sort_values("day", ignore_index=True)
     v1_columns, v2_columns = FEATURE_SETS["v1"][1], FEATURE_SETS["v2"][1]
     target, yesterday = frame["pm2_5"], frame["pm2_5_lag1"]

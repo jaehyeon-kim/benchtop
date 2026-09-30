@@ -13,7 +13,7 @@ names.
 The registry is in PostgreSQL, where the Feast UI reads it. There is no online store,
 because nothing is served online.
 
-Run after changing a definition: python -m airq.store --version v1   (or v2)
+Run after changing a definition: python -m airq.feature_store --version v1   (or v2)
 """
 
 import argparse

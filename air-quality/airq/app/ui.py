@@ -7,7 +7,7 @@
 
 All data comes from Iceberg and MLflow through `airq.app.reports`.
 
-Run: python -m airq.app   (then open http://127.0.0.1:8090)
+Run: python -m airq.app.ui   (then open http://127.0.0.1:8090)
 """
 
 from datetime import timedelta
@@ -57,13 +57,9 @@ def _aliases() -> dict[str, str]:
     Maps each served model version to its alias.
 
     Returns:
-        dict[str, str]: The alias of each version. A version that holds both aliases
-            gets "champion and challenger".
+        dict[str, str]: The alias of each version.
     """
-    served: dict[str, list[str]] = {}
-    for m in reports.served_models():
-        served.setdefault(m["version"], []).append(m["alias"])
-    return {version: " and ".join(names) for version, names in served.items()}
+    return {m["version"]: m["alias"] for m in reports.served_models()}
 
 
 def forecast_chart() -> dict:
@@ -79,8 +75,6 @@ def forecast_chart() -> dict:
     served = _aliases()
     history = reports.history(_HISTORY_DAYS)
     latest = reports.forecast()
-    if not latest.empty:  # one row per version and day, whatever its aliases
-        latest = latest.drop_duplicates(["model_version", "day"])
     end = reports.last_measured_day()
     measured = (
         reports.observed(end - timedelta(days=_HISTORY_DAYS - 1), end)
@@ -143,10 +137,7 @@ def _error_table() -> tuple[list[dict], list[dict]]:
         tuple[list[dict], list[dict]]: The table's columns and rows, in the form
             `ui.table` takes.
     """
-    # A version holding both aliases has a row under each; the table needs one.
-    table = reports.model_error(_ERROR_DAYS).drop_duplicates(
-        ["lead_days", "model_version"]
-    )
+    table = reports.model_error(_ERROR_DAYS)
     wide = table.pivot(index="lead_days", columns="model_version", values="mae")
     names = ["lead_days", *(f"v{v}" for v in wide.columns)]
     columns = [{"name": n, "label": n, "field": n} for n in names]

@@ -7,7 +7,7 @@ import pandas as pd
 from feast import FeatureStore, FeatureView, FileSource, RepoConfig
 
 from airq.config import STATION
-from airq.store.feast_repo import lead, station, weather_v1
+from airq.feature_store import lead, station, weather_v1
 
 
 def _day(d: int) -> datetime:

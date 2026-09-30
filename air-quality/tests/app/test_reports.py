@@ -33,19 +33,6 @@ def test_lower_names_the_smaller_error_and_handles_a_missing_model():
     assert reports._lower(1.0, float("nan")) == "champion"
 
 
-def test_a_version_holding_both_aliases_appears_under_each(monkeypatch):
-    """Verify that a version holding both aliases appears once under each, and a version with none gets an empty alias."""
-    served = [{"alias": "champion", "version": "6", "feature_set": "v2"},
-              {"alias": "challenger", "version": "6", "feature_set": "v2"}]  # fmt: skip
-    monkeypatch.setattr(reports, "served_models", lambda: served)
-    rows = reports._with_alias(pd.DataFrame({"model_version": ["6", "5"]}))
-    assert sorted(rows[rows["model_version"] == "6"]["alias"]) == [
-        "challenger",
-        "champion",
-    ]
-    assert list(rows[rows["model_version"] == "5"]["alias"]) == [""]
-
-
 def test_a_missing_table_reads_as_no_rows(monkeypatch):
     """Verify that a missing table, as the predictions table is straight after a backfill, reads as no rows."""
 

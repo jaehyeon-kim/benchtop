@@ -7,12 +7,11 @@ past predictions. They read Iceberg and MLflow and never write.
 from datetime import date, timedelta
 
 import pandas as pd
-from mlflow import MlflowClient
-from mlflow.exceptions import MlflowException
 
-from airq.config import CHALLENGER, CHAMPION, MODEL_NAME, PREDICTIONS, TABLES
+from airq import model_registry
+from airq.config import CHALLENGER, CHAMPION, PREDICTIONS, TABLES
 from airq.iceberg import catalog
-from airq.inference.infer import errors
+from airq.inference.infer import errors, score
 from airq.models import DailyAirQuality, Prediction
 
 
@@ -46,28 +45,17 @@ def served_models() -> list[dict]:
         list[dict]: The champion, then the challenger when one is set. Each has its
             `alias`, `version` and `feature_set`.
     """
-    client, served = MlflowClient(), []
-    for alias in (CHAMPION, CHALLENGER):
-        try:
-            version = client.get_model_version_by_alias(MODEL_NAME, alias)
-        except MlflowException:  # alias not set
-            continue
-        served.append(
-            {
-                "alias": alias,
-                "version": version.version,
-                "feature_set": version.tags.get("feature_set", "v1"),
-            }
-        )
-    return served
+    return [
+        {"alias": alias, "version": v.version, "feature_set": v.tags["feature_set"]}
+        for alias, v in model_registry.served()
+    ]
 
 
 def _with_alias(frame: pd.DataFrame) -> pd.DataFrame:
     """
     Adds an `alias` column to rows that have a `model_version`.
 
-    A version that holds both aliases, as straight after a promotion, appears once
-    under each. A version with no alias gets an empty string.
+    A version with no alias gets an empty string.
 
     Args:
         frame (pd.DataFrame): Rows with a `model_version` column.
@@ -152,26 +140,15 @@ def history(days: int) -> pd.DataFrame:
 
 def model_error(days: int = 30) -> pd.DataFrame:
     """
-    Returns each model version's mean absolute error for each lead.
+    Returns each model version's mean absolute error for each lead, with its alias.
 
     Args:
         days (int): How many days to score, counted back from the last measured day.
 
     Returns:
-        pd.DataFrame: One row per model version and lead, with the error (`mae`),
-            the number of days scored (`days`) and the version's alias.
+        pd.DataFrame: The rows of `infer.score`, with each version's alias.
     """
-    daily = _scan(TABLES[DailyAirQuality])
-    joined = errors(_scan(PREDICTIONS), daily)
-    if not daily.empty:
-        joined = joined[joined["day"] > daily["day"].max() - timedelta(days=days)]
-    table = (
-        joined.groupby(["model_version", "lead_days"])["abs_error"]
-        .agg(mae="mean", days="count")
-        .round(2)
-        .reset_index()
-    )
-    return _with_alias(table)
+    return _with_alias(score(_scan(PREDICTIONS), _scan(TABLES[DailyAirQuality]), days))
 
 
 def error_by_lead(days: int = 30) -> pd.DataFrame:

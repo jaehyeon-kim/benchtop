@@ -1,8 +1,8 @@
 """Defines the inference pipeline DAG.
 
-- airq_inference: runs each time airq_daily loads a day, and predicts the seven days
-  after that day. Airflow may combine several daily runs into one inference run. That
-  run then predicts for every day they loaded. It also runs after airq_training, for the
+- airq_inference: runs each time airq_features loads days, and predicts the seven days
+  after the last day loaded. Airflow may combine several feature runs into one inference
+  run. That run then predicts for each of their last days. It also runs after airq_training, for the
   day before, so the new versions have a forecast. A manual run can name the as-of date.
 
 The `airq` package is uploaded next to this file.

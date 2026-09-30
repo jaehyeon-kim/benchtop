@@ -2,8 +2,7 @@ from datetime import date
 
 import pandas as pd
 
-from airq.training.sweep import CANDIDATES, add_lags, choose, generated_frame
-from tests.conftest import ORIGIN
+from airq.training.sweep import add_lags, choose
 
 
 def test_choose_stops_when_the_next_candidate_gains_little():
@@ -25,13 +24,3 @@ def test_add_lags_reads_the_reading_k_days_before():
         date(2026, 9, 23)
     ]  # 22 Sep has no reading 3 days before
     assert lagged.iloc[0]["lag1"] == 3.0 and lagged.iloc[0]["lag3"] == 1.0
-
-
-def test_generated_frame_has_every_candidate_column_once_lagged():
-    """Verify that the generated frame has every candidate column once lags are added."""
-    frame, daily = generated_frame(ORIGIN, n_days=10, seed=1)
-    lagged = add_lags(frame, daily, [1, 2, 3])
-    columns = {c for cols in CANDIDATES.values() for c in cols}
-    assert columns <= set(lagged.columns)
-    assert len(frame) == 9  # the first day has no day before it
-    assert len(lagged) == 6  # and lag 3 needs three days before

@@ -9,11 +9,11 @@ model version reads the feature set named in its `feature_set` tag. The predicti
 D replace any earlier predictions for D in one commit, so a rerun replaces the run.
 
 The hindcast joins the predictions to the measured daily PM2.5 once it exists. It
-reports each model version's mean absolute error by lead and by as-of date.
+reports each model version's mean absolute error by lead.
 
-Run: python -m airq.inference --as-of "3 days ago"   (default: yesterday, UTC)
-     python -m airq.inference --days 30   (the 30 as-of dates ending yesterday)
-     python -m airq.inference --hindcast
+Run: python -m airq.inference.infer --as-of "3 days ago"   (default: yesterday, UTC)
+     python -m airq.inference.infer --days 30   (the 30 as-of dates ending yesterday)
+     python -m airq.inference.infer --hindcast
 """
 
 import argparse
@@ -22,12 +22,9 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import mlflow
 import pandas as pd
-from mlflow import MlflowClient
-from mlflow.exceptions import MlflowException
 
+from airq import model_registry
 from airq.config import (
-    CHALLENGER,
-    CHAMPION,
     LEADS,
     MODEL_NAME,
     PREDICTIONS,
@@ -36,9 +33,9 @@ from airq.config import (
 )
 from airq.days import FORMS
 from airq.days import argument as day_argument
+from airq.feature_store import FEATURE_SETS, store
 from airq.iceberg import arrow_schema, catalog, to_arrow
 from airq.models import DailyAirQuality, Prediction
-from airq.store.feast_repo import FEATURE_SETS, store
 
 logger = logging.getLogger(
     "airq.inference.infer"
@@ -99,39 +96,6 @@ def _predictions(
     ]
 
 
-def _served_versions(model_name: str) -> list:
-    """
-    Returns the model versions that inference predicts with.
-
-    The champion comes first. The challenger follows when it is set and is a different
-    version. Straight after a promotion, both aliases can point at the same version.
-
-    Args:
-        model_name (str): The registered model in MLflow.
-
-    Returns:
-        list: The MLflow model version of the champion, then of the challenger if there
-            is one.
-
-    Raises:
-        SystemExit: If no version holds the champion alias.
-    """
-    client = MlflowClient()
-    try:
-        versions = [client.get_model_version_by_alias(model_name, CHAMPION)]
-    except MlflowException:
-        raise SystemExit(
-            f"No {model_name} version is the {CHAMPION}: run the training pipeline first."
-        ) from None
-    try:
-        challenger = client.get_model_version_by_alias(model_name, CHALLENGER)
-    except MlflowException:  # no challenger registered
-        return versions
-    if challenger.version != versions[0].version:
-        versions.append(challenger)
-    return versions
-
-
 def _feature_request(served: list) -> tuple[list[str], list[str]]:
     """
     Lists the Feast features and columns the served versions need.
@@ -139,31 +103,28 @@ def _feature_request(served: list) -> tuple[list[str], list[str]]:
     Only these views are requested, so inference works before v2's view is registered.
 
     Args:
-        served (list): The served model versions, from `_served_versions`.
+        served (list): The served model versions, from `model_registry.served`.
 
     Returns:
         tuple[list[str], list[str]]: The feature references and the column names, each
             listed once.
     """
-    # Versions registered before v2 carry no tag; they are v1.
-    sets = [FEATURE_SETS[v.tags.get("feature_set", "v1")] for v in served]
+    sets = [FEATURE_SETS[v.tags["feature_set"]] for v in served]
     references = list(dict.fromkeys(r for refs, _ in sets for r in refs))
     columns = list(dict.fromkeys(c for _, cols in sets for c in cols))
     return references, columns
 
 
-def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
+def run(as_of: date) -> list[Prediction]:
     """
     Predicts PM2.5 for the seven days after `as_of` with every served model version.
 
-    It reads the features of both feature sets through Feast. Each served model version
-    predicts from its own feature set. A version without a `feature_set` tag was
-    registered before v2, so it reads the v1 features. The predictions then replace
-    those stored for `as_of`.
+    It reads through Feast only the features the served versions need. Each version
+    predicts from its own feature set. The predictions then replace those stored for
+    `as_of`.
 
     Args:
         as_of (date): The date the run treats as today.
-        model_name (str): The registered model in MLflow.
 
     Returns:
         list[Prediction]: The predictions written, seven for each model version.
@@ -172,7 +133,11 @@ def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
         SystemExit: If the forecast issued on `as_of` is incomplete, or no version is
             the champion.
     """
-    served = _served_versions(model_name)
+    served = [version for _, version in model_registry.served()]
+    if not served:
+        raise SystemExit(
+            f"No {MODEL_NAME} version is the champion: run the training pipeline first."
+        )
     references, columns = _feature_request(served)
     features = (
         store()
@@ -188,8 +153,8 @@ def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
     features = features.astype({column: "float64" for column in columns})
     rows = []
     for version in served:
-        inputs = FEATURE_SETS[version.tags.get("feature_set", "v1")][1]
-        model = mlflow.pyfunc.load_model(f"models:/{model_name}/{version.version}")
+        inputs = FEATURE_SETS[version.tags["feature_set"]][1]
+        model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{version.version}")
         predicted = model.predict(features[inputs])
         rows += _predictions(as_of, features, predicted, version.version)
 
@@ -203,7 +168,7 @@ def run(as_of: date, model_name: str = MODEL_NAME) -> list[Prediction]:
         PREDICTIONS,
         len(rows),
         as_of,
-        model_name,
+        MODEL_NAME,
         sorted({r.model_version for r in rows}),
     )
     return rows
@@ -232,29 +197,33 @@ def errors(predictions: pd.DataFrame, observed: pd.DataFrame) -> pd.DataFrame:
     return joined
 
 
-def hindcast() -> dict[str, pd.Series]:
+def score(
+    predictions: pd.DataFrame, observed: pd.DataFrame, days: int | None = None
+) -> pd.DataFrame:
     """
-    Scores the stored predictions against the measured daily PM2.5.
+    Returns each model version's mean absolute error for each lead.
+
+    This is the one scoring of predictions: the hindcast prints it, and the app's error
+    table shows it.
+
+    Args:
+        predictions (pd.DataFrame): Rows of the predictions table.
+        observed (pd.DataFrame): Rows of the `daily_air_quality` table.
+        days (int, optional): Score only the last `days` measured days. None scores all.
 
     Returns:
-        dict[str, pd.Series]: The mean absolute error of each model version, rounded to
-            two decimal places. The `lead_days` entry groups it by lead, and the `as_of`
-            entry groups it by as-of date.
-
-    Raises:
-        SystemExit: If the predictions table does not exist yet.
+        pd.DataFrame: One row per model version and lead, with the error (`mae`) and the
+            number of days scored (`days`).
     """
-    cat = catalog()
-    if not cat.table_exists(PREDICTIONS):
-        raise SystemExit("No predictions yet: run the inference pipeline first.")
-    joined = errors(
-        cat.load_table(PREDICTIONS).scan().to_pandas(),
-        cat.load_table(TABLES[DailyAirQuality]).scan().to_pandas(),
+    joined = errors(predictions, observed)
+    if days is not None and not observed.empty:
+        joined = joined[joined["day"] > observed["day"].max() - timedelta(days=days)]
+    return (
+        joined.groupby(["model_version", "lead_days"])["abs_error"]
+        .agg(mae="mean", days="count")
+        .round(2)
+        .reset_index()
     )
-    return {
-        by: joined.groupby(["model_version", by])["abs_error"].mean().round(2)
-        for by in ("lead_days", "as_of")
-    }
 
 
 if __name__ == "__main__":
@@ -277,8 +246,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.hindcast:
-        for by, mae in hindcast().items():
-            print(f"MAE by {by}:\n{mae.to_string()}\n")
+        cat = catalog()
+        if not cat.table_exists(PREDICTIONS):
+            raise SystemExit("No predictions yet: run the inference pipeline first.")
+        table = score(
+            cat.load_table(PREDICTIONS).scan().to_pandas(),
+            cat.load_table(TABLES[DailyAirQuality]).scan().to_pandas(),
+        )
+        print(table.to_string(index=False))
     else:
         for n in reversed(range(args.days)):
             run(args.as_of - timedelta(days=n))

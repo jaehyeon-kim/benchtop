@@ -48,13 +48,10 @@ def resolve(text: str, on: date | None = None, forward: bool = False) -> date:
     """
     on = on or today()
     phrase = " ".join(text.lower().split())
-    fixed = {"today": 0, "yesterday": -1, "tomorrow": 1}
-    if phrase in fixed:
-        return on + timedelta(days=fixed[phrase])
-    if match := re.fullmatch(r"(\d+) days? ago", phrase):
-        return on - timedelta(days=int(match[1]))
-    if match := re.fullmatch(r"in (\d+) days?|(\d+) days? (?:from now|ahead)", phrase):
-        return on + timedelta(days=int(match[1] or match[2]))
+    # dateparser reads "today", "3 days ago", "in 2 days" and dates, but not the forms
+    # below: "N days ahead", weekends, and weekdays counted from `on` itself.
+    if match := re.fullmatch(r"(\d+) days? (?:from now|ahead)", phrase):
+        return on + timedelta(days=int(match[1]))
     phrase = {"this weekend": "saturday", "next weekend": "next saturday", "last weekend": "last saturday"}.get(phrase, phrase)  # fmt: skip
     if (match := re.fullmatch(r"(?:(this|next|last) )?(\w+)", phrase)) and match[2] in WEEKDAYS:  # fmt: skip
         ahead = (WEEKDAYS.index(match[2]) - on.weekday()) % 7
@@ -65,10 +62,7 @@ def resolve(text: str, on: date | None = None, forward: bool = False) -> date:
         if forward:
             return on + timedelta(days=ahead)
         return on - timedelta(days=(7 - ahead) % 7)
-    try:
-        return date.fromisoformat(phrase)
-    except ValueError:
-        return _parse(phrase, on, forward)
+    return _parse(phrase, on, forward)
 
 
 def _parse(phrase: str, on: date, forward: bool) -> date:

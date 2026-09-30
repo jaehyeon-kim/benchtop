@@ -24,7 +24,7 @@ from collections.abc import Iterable
 import boto3
 import mlflow
 import requests
-from feast.errors import ProjectNotFoundException
+from feast.errors import ProjectNotFoundException, ProjectObjectNotFoundException
 from feast.infra.registry.sql import feature_view_version_history
 from mlflow.exceptions import MlflowException
 from pyiceberg.exceptions import NoSuchNamespaceError
@@ -40,8 +40,8 @@ from airq.config import (
     MODEL_NAME,
     NAMESPACE,
 )
+from airq.feature_store import store
 from airq.iceberg import catalog
-from airq.store.feast_repo import store
 
 logger = logging.getLogger("airq.cleanup")  # __name__ is "__main__" under python -m
 
@@ -83,7 +83,9 @@ def _s3():
         "s3",
         endpoint_url=os.environ["PYICEBERG_CATALOG__ODCTL__S3__ENDPOINT"],
         aws_access_key_id=os.environ["PYICEBERG_CATALOG__ODCTL__S3__ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["PYICEBERG_CATALOG__ODCTL__S3__SECRET_ACCESS_KEY"],
+        aws_secret_access_key=os.environ[
+            "PYICEBERG_CATALOG__ODCTL__S3__SECRET_ACCESS_KEY"
+        ],
         region_name=os.environ["PYICEBERG_CATALOG__ODCTL__S3__REGION"],
     )
 
@@ -132,7 +134,9 @@ def _airflow(s3) -> None:
         s3 (botocore.client.S3): The S3 client.
     """
     removed = _delete(s3, _DAGS_BUCKET, dag_keys(_keys(s3, _DAGS_BUCKET, _DAGS_PREFIX)))
-    logger.info("Airflow: deleted %d files from s3://%s/%s", removed, _DAGS_BUCKET, _DAGS_PREFIX)
+    logger.info(
+        "Airflow: deleted %d files from s3://%s/%s", removed, _DAGS_BUCKET, _DAGS_PREFIX
+    )
     token = requests.post(
         f"{AIRFLOW_URL}/auth/token",
         json={"username": AIRFLOW_USER, "password": AIRFLOW_PASSWORD},
@@ -189,7 +193,9 @@ def _mlflow(s3) -> None:
     if experiment is None:
         return
     ids = [experiment.experiment_id]
-    models = _all_pages(lambda token: client.search_logged_models(ids, page_token=token))
+    models = _all_pages(
+        lambda token: client.search_logged_models(ids, page_token=token)
+    )
     for model in models:
         client.delete_logged_model(model.model_id)
     runs = _all_pages(lambda token: client.search_runs(ids, page_token=token))
@@ -212,8 +218,7 @@ def _feast() -> None:
     """
     Deletes the Feast project's entities and views from the registry.
 
-    Opening the store adds an empty project row when there is none, so the project is
-    deleted either way, and the log counts the objects it held. The views' version
+    A project that is not registered is skipped, and the log counts the objects it held. The views' version
     history is deleted too.
     """
     st = store()
@@ -221,7 +226,7 @@ def _feast() -> None:
     entities = st.list_entities()
     try:
         st.delete_project(FEAST_PROJECT)
-    except ProjectNotFoundException:
+    except (ProjectNotFoundException, ProjectObjectNotFoundException):
         pass  # not registered
     # delete_project leaves the views' version history, and registering the same view
     # again then fails on a duplicate key.
@@ -258,7 +263,9 @@ def _iceberg(s3) -> None:
         cat.drop_table(identifier)
     if tables or NAMESPACE in {n[0] for n in cat.list_namespaces()}:
         cat.drop_namespace(NAMESPACE)
-    removed = _delete(s3, _WAREHOUSE_BUCKET, _keys(s3, _WAREHOUSE_BUCKET, f"{NAMESPACE}/"))
+    removed = _delete(
+        s3, _WAREHOUSE_BUCKET, _keys(s3, _WAREHOUSE_BUCKET, f"{NAMESPACE}/")
+    )
     logger.info(
         "Iceberg: dropped %d tables and %d files from s3://%s/%s/",
         len(tables),

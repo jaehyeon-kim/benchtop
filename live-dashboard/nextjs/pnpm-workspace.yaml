@@ -1,0 +1,4 @@
+publicHoistPattern:
+  - "*@nextui-org/*"  # Tailwind reads NextUI's theme from node_modules/@nextui-org/theme
+allowBuilds:
+  sharp: false  # sharp ships prebuilt binaries, so its build script is not needed

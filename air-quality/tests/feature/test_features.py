@@ -1,32 +1,39 @@
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 
 from airq.config import DEFAULT_SEED, STATION
-from airq.feature.daily import day_rows
 from airq.feature.features import daily_features, in_window
+from airq.feature.generator import generate
+from airq.feature.load import advance
+from airq.feature.simulation import HourlyPublisher
 from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 from tests.conftest import ORIGIN
 
 
-def test_daily_run_writes_what_the_backfill_writes(simulate):
-    """Verify that the daily run's rows for a day equal the backfill's rows for that day."""
-    rows = simulate(days=6)
-    forecasts = [r for r in rows if isinstance(r, WeatherForecast)]
-    observations = [r for r in rows if isinstance(r, Observation)]
-    weather, air_quality = daily_features(forecasts, observations)
-    day = (ORIGIN + timedelta(days=5)).date()
-    start = datetime.combine(day, time(), UTC)
-    end = start + timedelta(days=1)
-    backfill = {
-        WeatherForecast: forecasts,
-        Observation: observations,
-        DailyWeather: weather,
-        DailyAirQuality: air_quality,
-    }
-    expected = {
-        m: [r for r in v if in_window(r, start, end)] for m, v in backfill.items()
-    }
-    assert day_rows(day, ORIGIN, DEFAULT_SEED) == expected
-    assert [len(v) for v in expected.values()] == [7 * 24, 24, 7, 1]
+def test_daily_run_writes_what_the_backfill_writes():
+    """Verify that the daily run publishes the same rows for a day as the backfill does."""
+    start = ORIGIN + timedelta(days=5)
+
+    backfill_records, backfill = generate(ORIGIN, DEFAULT_SEED), HourlyPublisher()
+    published = [
+        r for _ in range(6 * 24) for r in backfill.step(next(backfill_records))
+    ]
+    expected = [r for r in published if in_window(r, start, start + timedelta(days=1))]
+
+    records = generate(ORIGIN, DEFAULT_SEED)
+    daily = HourlyPublisher(advance(records, start))
+    actual = [r for _ in range(24) for r in daily.step(next(records))]
+
+    assert actual == expected
+    counts = {m: sum(isinstance(r, m) for r in actual) for m in (WeatherForecast, Observation, DailyWeather, DailyAirQuality)}  # fmt: skip
+    assert list(counts.values()) == [7 * 24, 24, 7, 1]
+
+
+def test_the_first_day_has_no_air_quality_row():
+    """Verify that the first simulated day publishes no air quality row, because it has no day before."""
+    records, publisher = generate(ORIGIN, DEFAULT_SEED), HourlyPublisher()
+    rows = [r for _ in range(24) for r in publisher.step(next(records))]
+    assert not any(isinstance(r, DailyAirQuality) for r in rows)
+    assert sum(isinstance(r, DailyWeather) for r in rows) == 7
 
 
 def test_daily_features_average_complete_days():

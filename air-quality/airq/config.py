@@ -60,7 +60,7 @@ DAILY_FEATURES_ASSET = "airq_daily_features"
 # Airflow asset training updates; the inference DAG is scheduled on it too.
 MODELS_ASSET = "airq_models"
 # The DAGs in dags/, by id; the clean-up deletes their records in Airflow.
-DAG_IDS = ("airq_backfill", "airq_daily", "airq_training", "airq_inference")
+DAG_IDS = ("airq_features", "airq_training", "airq_inference")
 AIRFLOW_URL = "http://127.0.0.1:8085"  # the Airflow API, from the host
 AIRFLOW_USER, AIRFLOW_PASSWORD = "user", "password"
 

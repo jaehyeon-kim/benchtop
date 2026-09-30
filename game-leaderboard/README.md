@@ -2,6 +2,8 @@
 
 Live leaderboards for a simulated mobile game. A simulation plays the game and sends every score to Kafka. Four Flink SQL jobs keep four top 10 leaderboards up to date in PostgreSQL, and a web dashboard shows them as they change. Everything runs on your own machine, and no step calls an external service.
 
+It is described in a post: [Live Game Leaderboards with Kafka, Flink SQL and a Discrete-Event Simulation](https://jaehyeon.me/blog/2026-10-02-game-leaderboard-flink-sql/).
+
 More detail is in two documents:
 
 - [Concepts](docs/concepts.md): the ideas the project is built on, from event time to Top-N queries, and where the code uses them.

@@ -4,6 +4,8 @@ Change data capture (CDC) on a simulated online shop. A simulation writes the sh
 
 The shop's tables follow the [theLook eCommerce](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce) dataset.
 
+It is described in a post: [Change Data Capture on a Simulated Online Shop with Debezium and Kafka Connect](https://jaehyeon.me/blog/2026-10-01-ecommerce-cdc-debezium-kafka-connect/).
+
 More detail is in two documents:
 
 - [Concepts](docs/concepts.md): how CDC, Debezium, Kafka Connect, Avro and the simulation work, explained from the start.

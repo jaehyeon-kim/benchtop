@@ -6,6 +6,14 @@ Each order has an id, a bid time, a price, an item and a supplier. The statistic
 
 [Concepts](docs/concepts.md) explains the ideas each step uses: partitions, consumer groups, schemas, windows and watermarks. Each step links to the part it needs.
 
+It is described in a series of five posts:
+
+- [Kafka Clients with JSON - Producing and Consuming Order Events](https://jaehyeon.me/blog/2025-05-20-kotlin-getting-started-kafka-json-clients/)
+- [Kafka Clients with Avro - Schema Registry and Order Events](https://jaehyeon.me/blog/2025-05-27-kotlin-getting-started-kafka-avro-clients/)
+- [Kafka Streams - Lightweight Real-Time Processing for Supplier Stats](https://jaehyeon.me/blog/2025-06-03-kotlin-getting-started-kafka-streams/)
+- [Flink DataStream API - Scalable Event Processing for Supplier Stats](https://jaehyeon.me/blog/2025-06-10-kotlin-getting-started-flink-datastream/)
+- [Flink Table API - Declarative Analytics for Supplier Stats in Real Time](https://jaehyeon.me/blog/2025-06-17-kotlin-getting-started-flink-table/)
+
 ## Architecture
 
 All four applications use one Kafka broker. The producers write orders to a topic, and every other application reads that topic.

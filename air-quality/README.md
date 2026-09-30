@@ -49,6 +49,10 @@ They share only two stores. The **feature store** holds the features, so trainin
 2. Ask the assistant a question.
 3. Load another day, forecast, and refresh the app.
 
+Steps 1 to 3 run from the terminal. [Running the pipelines in Airflow](#running-the-pipelines-in-airflow) then runs the same steps on a schedule.
+
+To start again at any point, `python -m airq.cleanup` removes everything this project has created and keeps the services running. See [Clean up](#clean-up).
+
 The three forecasts compared:
 
 | Forecast | Predicts from |
@@ -191,54 +195,6 @@ The hindcast compares the predictions with the PM2.5 measured since, and reports
 python -m airq.inference --hindcast
 ```
 
-### Run it in Airflow
-
-Airflow runs the same pipelines on a schedule, as an alternative to the commands above. Its backfill replaces the data those commands wrote. Airflow runs each pipeline as a DAG, its name for a workflow. It loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds.
-
-Copy the `dags` folder and the `airq` package its tasks import there, and copy them again whenever you change either:
-
-```bash
-export AWS_ACCESS_KEY_ID=user AWS_SECRET_ACCESS_KEY=password AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://127.0.0.1:8333 s3 sync . s3://airflow/dags --exclude "*" --include "airq/*.py" --include "dags/*.py" --delete
-```
-
-`--delete` removes files you have deleted locally.
-
-The DAGs:
-
-| DAG | Runs | Parameters |
-|---|---|---|
-| `airq_backfill` | when triggered | `n_days` (730), `seed` (42) |
-| `airq_daily` | every day at 00:00 UTC, for the day before | `date`, `seed`: when triggered |
-| `airq_training` | when triggered | `version` (v1 or v2, default v1) |
-| `airq_inference` | after each `airq_daily` run, for the day it loaded, and after each `airq_training` run, for the day before | `as_of`: when triggered |
-
-In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), they appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_daily` is first unpaused, it runs straight away for the most recent day.
-
-The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote:
-
-```bash
-# 1. the backfill
-docker exec airflow airflow dags unpause airq_backfill
-docker exec airflow airflow dags trigger airq_backfill --conf '{"n_days": 730, "seed": 42}'
-docker exec airflow airflow dags list-runs airq_backfill        # wait for success
-
-# 2. v1's training; inference follows by itself
-docker exec airflow airflow dags unpause airq_inference
-docker exec airflow airflow dags unpause airq_training
-docker exec airflow airflow dags trigger airq_training --conf '{"version": "v1"}'
-docker exec airflow airflow dags list-runs airq_inference       # wait for success
-
-# 3. the daily run; inference follows by itself
-docker exec airflow airflow dags unpause airq_daily
-docker exec airflow airflow dags trigger airq_daily --conf '{"date": "today"}'
-docker exec airflow airflow dags list-runs airq_inference       # wait for success
-```
-
-Unpause `airq_daily` only after the backfill, because it runs straight away for the most recent day and needs the tables. If a DAG is missing, `docker exec airflow airflow dags list-import-errors` shows why.
-
-Each command also prints OpenTelemetry warnings and errors, because odctl turns on Airflow's metrics without starting the service that collects them. They do no harm. To hide them, add `-e AIRFLOW__METRICS__OTEL_ON=False` after `docker exec`.
-
 ## Step 2: v2 pipelines
 
 v2 improves v1 with more features. This step finds which features help, adds them, and compares v2 with v1 before putting it in use.
@@ -285,8 +241,6 @@ Training v2 works as for v1, on the same test days, and scores the baseline agai
 ```bash
 python -m airq.training --version v2
 ```
-
-In Airflow, trigger `airq_training` with `{"version": "v2"}`.
 
 ### Compare v1 and v2
 
@@ -377,6 +331,75 @@ Press **Refresh** in the app, and the charts move forward one day.
 | The charts or the error table are empty | There are no predictions yet: run the backtest in [Before you start](#before-you-start). |
 | The header shows no model versions | No model is registered: run the training pipeline. |
 
+## Running the pipelines in Airflow
+
+Airflow runs the same pipelines as DAGs, its name for workflows, and runs them on a schedule. It is an alternative to the terminal commands in Steps 1 and 2: its backfill replaces the data those commands wrote. Run `python -m airq.cleanup` first to start from an empty stack ([Clean up](#clean-up)).
+
+Airflow loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds. Copy the `dags` folder and the `airq` package its tasks import there, and copy them again whenever you change either:
+
+```bash
+export AWS_ACCESS_KEY_ID=user AWS_SECRET_ACCESS_KEY=password AWS_DEFAULT_REGION=us-east-1
+aws --endpoint-url http://127.0.0.1:8333 s3 sync . s3://airflow/dags --exclude "*" --include "airq/*.py" --include "dags/*.py" --delete
+```
+
+`--delete` removes files you have deleted locally.
+
+The DAGs:
+
+| DAG | Runs | Parameters |
+|---|---|---|
+| `airq_backfill` | when triggered | `n_days` (730), `seed` (42) |
+| `airq_daily` | every day at 00:00 UTC, for the day before | `date`, `seed`: when triggered |
+| `airq_training` | when triggered | `version` (v1 or v2, default v1) |
+| `airq_inference` | after each `airq_daily` run, for the day it loaded, and after each `airq_training` run, for the day before | `as_of`: when triggered |
+
+The steps map onto them in the same order:
+
+| Step | DAG | Parameters |
+|---|---|---|
+| Backfill the history | `airq_backfill` | `{"n_days": 730, "seed": 42}` |
+| Train v1 | `airq_training` | `{"version": "v1"}` |
+| Load a day | `airq_daily` | `{"date": "today"}` |
+| Train v2 | `airq_training` | `{"version": "v2"}` |
+| Promote v2 | none: run `python -m airq.training.promote` | |
+
+Registering the features with `python -m airq.store` also stays a terminal command, before each training step. Inference has no step of its own, because Airflow starts it after each daily run and each training run.
+
+In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_daily` is first unpaused, it runs straight away for the most recent day.
+
+The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote:
+
+```bash
+# 1. the backfill
+docker exec airflow airflow dags unpause airq_backfill
+docker exec airflow airflow dags trigger airq_backfill --conf '{"n_days": 730, "seed": 42}'
+docker exec airflow airflow dags list-runs airq_backfill        # wait for success
+
+# 2. v1's training; inference follows by itself
+python -m airq.store --version v1
+docker exec airflow airflow dags unpause airq_inference
+docker exec airflow airflow dags unpause airq_training
+docker exec airflow airflow dags trigger airq_training --conf '{"version": "v1"}'
+docker exec airflow airflow dags list-runs airq_inference       # wait for success
+
+# 3. the daily run; inference follows by itself
+docker exec airflow airflow dags unpause airq_daily
+docker exec airflow airflow dags trigger airq_daily --conf '{"date": "today"}'
+docker exec airflow airflow dags list-runs airq_inference       # wait for success
+
+# 4. v2's training; inference follows by itself
+python -m airq.store --version v2
+docker exec airflow airflow dags trigger airq_training --conf '{"version": "v2"}'
+docker exec airflow airflow dags list-runs airq_inference       # wait for success
+
+# 5. promotion
+python -m airq.training.promote
+```
+
+Unpause `airq_daily` only after the backfill, because it runs straight away for the most recent day and needs the tables. If a DAG is missing, `docker exec airflow airflow dags list-import-errors` shows why.
+
+Each command also prints OpenTelemetry warnings and errors, because odctl turns on Airflow's metrics without starting the service that collects them. They do no harm. To hide them, add `-e AIRFLOW__METRICS__OTEL_ON=False` after `docker exec`.
+
 ## Tests
 
 The tests need none of the services:
@@ -386,6 +409,21 @@ python -m pytest tests
 ```
 
 They cover the simulation and feature code, the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases and the assistant's tools. GitHub runs them, after the repository's lint checks, on every push to `main`.
+
+## Clean up
+
+`python -m airq.cleanup` removes everything this project has written, and keeps the services running:
+
+- **Airflow:** the DAG files in `s3://airflow/dags`, then the DAGs and their run history.
+- **MLflow:** the model `airq_pm25`, and the runs and files of the experiment `airq`. The experiment stays, empty, because MLflow does not let a deleted experiment's name be used again.
+- **Feast:** the project `airq`, with its entities and views.
+- **Iceberg:** the tables in the `airq` namespace, the namespace, and their files in SeaweedFS.
+
+It touches nothing else on the stack. Run it to retry the steps from the start, without restarting the services:
+
+```bash
+python -m airq.cleanup
+```
 
 ## Tear down
 

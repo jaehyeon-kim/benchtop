@@ -15,7 +15,12 @@ benchtop/
 
 ## Projects
 
-- [air-quality](air-quality/README.md): forecasts daily PM2.5, a measure of air pollution, for the next seven days from weather forecasts, with a monitoring dashboard and a chat assistant.
+- **MLOps with a Feature Store**: a series that rebuilds the three projects in Jim Dowling's book on feature stores with open-source tools. The [introduction](https://jaehyeon.me/blog/2026-09-28-mlops-with-a-feature-store/) explains the series.
+  1. [air-quality](air-quality/README.md): forecasts daily PM2.5, a measure of air pollution, for the next seven days from weather forecasts, with a monitoring dashboard and a chat assistant.
+  2. Credit card fraud detection: real-time features from a stream of transactions. Planned.
+  3. Video recommender: retrieves and ranks videos for each user in real time. Planned.
+- thelook-ecomm-cdc: e-commerce changes streamed from PostgreSQL to Kafka and SeaweedFS with Debezium. Planned.
+- mobile-game-top-k: live game leaderboards computed with Flink SQL, shown in a NiceGUI dashboard. Planned.
 
 ## Checks
 

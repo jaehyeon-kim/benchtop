@@ -32,19 +32,11 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 - **Feature:** one input a model learns from, such as `temperature_2m`.
 - **Feature group:** a table of features, like `daily_weather` above.
 - **Entity:** what a row is about. Here: the station (`location_id`), plus how many days ahead the forecast was made (`lead_days`).
-- **Event time:** the day the values were true, here `day`. It is not the time the row was written, which matters when training must use only what was known at the time.
-- **Feature view:** a named choice of columns for one model. `weather_v1` picks the three weather columns above, and `calendar_v2` adds a weekend flag. A feature view stores no data; it only says which columns to read.
+- **Event time:** the time the values describe. In the row above it is `day`, 20 September: the forecast is about the weather on 20 September. It is not when the forecast was made (`issued_on`, 19 September), and not when the row was written to the table, which is later. When training asks for the features of 20 September, Feast finds this row by its event time.
+- **Feature view:** a named set of features that a model reads. `weather_v1` picks the three weather columns above, and v1 reads only that view. `calendar_v2` holds the weekend flag, and v2 reads both views. A feature view stores no data; it only says which columns to read.
 - **Label:** the answer the model learns to predict: here `pm2_5`, the day's measured air pollution, from the `daily_air_quality` table. It is kept apart from the features and joined to them only when training data is built.
 
 `location_id`, `day`, `lead_days` and `issued_on` find the right row; they are never fed to the model.
-
-## Feature types
-
-A feature's type decides what can be done with it:
-- **Numerical:** a number where differences mean something. 20 °C is 2 degrees warmer than 18 °C. Temperature, wind speed and wet hours are numerical.
-- **Categorical:** a category, not an amount. The weekend flag is either yes or no.
-
-Numbers can be scaled; categories are turned into numbers such as 0 and 1 before a model uses them.
 
 ## Three kinds of data transformation
 
@@ -54,8 +46,6 @@ Numbers can be scaled; categories are turned into numbers such as 0 and 1 before
   - the model needs to know whether each day it predicts is a Saturday or Sunday;
   - most features are calculated in advance and stored, one row per day. But a day's row is written only after its readings arrive, so the seven days being forecast have no rows yet;
   - so when training or inference asks Feast for features for a given day, the on-demand view `calendar_v2` works out the weekend flag from that day's date on the spot.
-
-  Training and inference both call the same `calendar_v2`, so the flag is always calculated the same way.
 
 ## Backfill and incremental runs
 
@@ -77,9 +67,18 @@ Each forecast row records the day it was made, so Feast always picks the right o
 
 ## Reproducible training data
 
-Tables change: every write creates a new version of an Iceberg table, called a **snapshot**. So reading the same table next week can return different data.
+Every write to an Iceberg table creates a new version of it, called a **snapshot**. So reading a table next week can return different data from reading it today. To be able to read a model's training data again, training pins the snapshots it read.
 
-Each training run records which snapshot of each table it read, and tags it so the snapshot is never cleaned up. The exact training data can then be read again later. The run also stops if a table changes while it is being read.
+Who does what:
+
+| Part | Role |
+|---|---|
+| Iceberg | creates a snapshot on every write, and keeps tags: names that point at one snapshot each |
+| Feast | reads the training data from the current snapshot of `daily_weather` and `daily_air_quality`. It does not record which snapshot that was |
+| Training pipeline (`airq/training/train.py`) | reads the current snapshot id of both tables before and after Feast reads them, and stops if either changed. It then tags both snapshots `mlflow-<run id>` |
+| MLflow | stores each snapshot id and tag name on the training run, so a model's training data can be found from its run |
+
+Iceberg's maintenance jobs (compaction, snapshot expiry and orphan file removal) never delete a snapshot that a tag points to, or the files it uses. So a run's training data can be read again for as long as its tag exists. Two side effects remain. The tagged files take up space until the tag is removed. And a compaction that commits while training is reading changes the snapshot id, so training stops and has to be run again. This project runs none of these jobs.
 
 ## Model registry, versions and evaluation
 

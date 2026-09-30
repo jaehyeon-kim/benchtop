@@ -1,0 +1,3 @@
+data/*
+!data/products.csv
+!data/world_pop.csv

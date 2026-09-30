@@ -1,0 +1,14 @@
+faker
+scikit-learn>=0.24.0
+pandas>=1.1.0,<2.0.0
+numpy>=1.20.2,<2.0.0
+textwiser>=2.0.0
+# textwiser only asks for flair>=0.9, and flair 0.11.x hard-pins
+# sentencepiece==0.1.95, which has no wheel for Python 3.11 and fails to build.
+# Floor flair so sentencepiece comes in via transformers[sentencepiece] instead.
+flair>=0.12
+mabwiser>=2.7.4
+mab2rec>=1.3.0
+redis>=7.1.0,<8.0.0
+confluent-kafka[avro]>=2.3.0
+odctl

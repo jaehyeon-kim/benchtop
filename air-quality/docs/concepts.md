@@ -42,10 +42,7 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 
 - **Model-independent transformations** produce features any model can reuse. They run once, in the feature pipeline, and their output is stored. Here: the hourly forecasts and readings averaged into daily rows, wet hours counted, and yesterday's mean.
 - **Model-dependent transformations** depend on one model and its training data, such as scaling or encoding. They are applied in both the training and the inference pipeline, never stored. Here there are none: XGBoost needs no scaling, and the weekend flag is already 0 or 1.
-- **On-demand transformations** calculate a feature at the moment it is asked for, instead of reading it from a stored table. They are for features that cannot be stored in advance. Here, that is the weekend flag:
-  - the model needs to know whether each day it predicts is a Saturday or Sunday;
-  - most features are calculated in advance and stored, one row per day. But a day's row is written only after its readings arrive, so the seven days being forecast have no rows yet;
-  - so when training or inference asks Feast for features for a given day, the on-demand view `calendar_v2` works out the weekend flag from that day's date on the spot.
+- **On-demand transformations** calculate a feature at the moment it is asked for, instead of reading it from a stored table. They are for features that cannot be stored in advance. Here that is the weekend flag. A day's row in `daily_air_quality` is written only after its readings arrive, so the seven days being forecast have no row yet. So when training or inference asks Feast for a day's features, the on-demand view `calendar_v2` works out the weekend flag from that day's date.
 
 ## Backfill and incremental runs
 
@@ -53,13 +50,13 @@ A **backfill** creates feature data from history, for a new system or to fill a 
 
 ## Data validation on write
 
-Validate data before it is written, because one bad row can break a training or inference run later. Here every row is built from a pydantic model with bounds such as PM2.5 between 0 and 500 (`airq/models.py`), so a pipeline stops before writing an impossible value.
+Validate data before it is written, because one bad row can break a training or inference run later. Here every row is built from a pydantic model with bounds such as PM2.5 between 0 and 500 (`airq/core/models.py`), so a pipeline stops before writing an impossible value.
 
 ## Point-in-time correct training data
 
 A model should learn only from what was known at the time. To learn the PM2.5 of a day, it sees the weather forecast made the day before, never anything that came later. Using later information is called **leakage**: it makes a model look better in testing than it will be in real use.
 
-Each forecast row records the day it was made, so Feast always picks the right one. If that forecast is missing, Feast returns nothing rather than an older one (`tests/store/test_point_in_time.py` checks this).
+Each forecast row records the day it was made, so Feast always picks the right one. If that forecast is missing, Feast returns nothing rather than an older one (`tests/stores/test_point_in_time.py` checks this).
 
 ## No skew between training and inference
 
@@ -112,7 +109,7 @@ Here readings arrive the next day, so the hindcast measures error daily, and the
 
 A language model cannot see the project's tables. Instead it is given **tools**: named functions it may call. For each question, the model picks a tool and its inputs, the code runs it, and the model writes its answer from the result.
 
-Here the assistant has three tools, over the same queries the Monitoring tab uses, so its numbers always match the charts.
+Here the assistant has three tools, over the same queries the Monitoring tab uses.
 
 ## Versioning
 

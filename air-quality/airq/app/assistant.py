@@ -17,9 +17,9 @@ from strands import Agent, tool
 from strands.models.ollama import OllamaModel
 
 from airq.app import reports
-from airq.config import ASSISTANT_MODEL, CHALLENGER, CHAMPION, OLLAMA_HOST
-from airq.days import FORMS, WEEKDAYS, resolve
-from airq.days import today as utc_today
+from airq.core.config import ASSISTANT_MODEL, CHALLENGER, CHAMPION, OLLAMA_HOST
+from airq.core.days import FORMS, WEEKDAYS, resolve
+from airq.core.days import today as utc_today
 
 _PROMPT = """You answer questions about the daily PM2.5 forecast for one simulated
 air quality station. Today is {today} ({weekday}, UTC). PM2.5 is in µg/m³.

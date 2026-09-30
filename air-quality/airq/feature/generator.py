@@ -17,8 +17,8 @@ import numpy as np
 from numpy.random import Generator
 from pydantic import BaseModel
 
-from airq.config import LEADS, STATION
-from airq.models import Observation, WeatherForecast
+from airq.core.config import LEADS, STATION
+from airq.core.models import Observation, WeatherForecast
 
 # Temperature and wind are deviations from their cycles.
 _CALM = {"temperature": 0.0, "wind": 0.0, "wet": False, "rain": 0.0, "direction": 180.0}  # fmt: skip

@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from airq.days import resolve
+from airq.core.days import resolve
 
 SATURDAY = date(2026, 9, 26)
 

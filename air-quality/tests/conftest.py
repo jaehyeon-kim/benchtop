@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from airq.config import DEFAULT_SEED
+from airq.core.config import DEFAULT_SEED
 from airq.feature.features import daily_features
 from airq.feature.generator import generate
 

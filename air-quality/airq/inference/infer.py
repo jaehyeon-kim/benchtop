@@ -23,19 +23,19 @@ from datetime import UTC, date, datetime, time, timedelta
 import mlflow
 import pandas as pd
 
-from airq import model_registry
-from airq.config import (
+from airq.core.config import (
     LEADS,
     MODEL_NAME,
     PREDICTIONS,
     STATION,
     TABLES,
 )
-from airq.days import FORMS
-from airq.days import argument as day_argument
-from airq.feature_store import FEATURE_SETS, store
-from airq.iceberg import arrow_schema, catalog, to_arrow
-from airq.models import DailyAirQuality, Prediction
+from airq.core.days import FORMS
+from airq.core.days import argument as day_argument
+from airq.core.models import DailyAirQuality, Prediction
+from airq.stores import model_registry
+from airq.stores.feature_store import FEATURE_SETS, store
+from airq.stores.iceberg import arrow_schema, catalog, to_arrow
 
 logger = logging.getLogger(
     "airq.inference.infer"

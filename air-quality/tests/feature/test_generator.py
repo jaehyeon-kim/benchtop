@@ -1,8 +1,8 @@
 from collections import defaultdict
 from datetime import timedelta
 
-from airq.config import LEADS
-from airq.models import Observation, WeatherForecast
+from airq.core.config import LEADS
+from airq.core.models import Observation, WeatherForecast
 
 
 def test_each_hour_issues_one_forecast_per_lead(simulate):

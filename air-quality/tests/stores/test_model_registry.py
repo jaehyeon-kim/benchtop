@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 from mlflow.exceptions import MlflowException
 
-from airq import model_registry
-from airq.model_registry import promote, role
+from airq.stores import model_registry
+from airq.stores.model_registry import promote, role
 
 
 class FakeClient:

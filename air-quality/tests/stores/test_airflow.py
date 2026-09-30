@@ -1,4 +1,4 @@
-from airq.cleanup import dag_keys
+from airq.stores.airflow import dag_keys
 
 
 def test_dag_keys_select_only_this_projects_files():

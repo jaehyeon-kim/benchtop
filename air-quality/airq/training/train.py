@@ -8,7 +8,7 @@ the forecast for each day issued the day before. v2 adds the weekend flag from t
 The days are split in time order: the earlier 80% train the model and the last 20% test
 it. The model and the baseline are scored on the same test days.
 
-Each version is registered under `airq_pm25`, with the alias `airq.model_registry`
+Each version is registered under `airq_pm25`, with the alias `airq.stores.model_registry`
 gives it. The run also logs a feature importance plot.
 
 Feast does not pin Iceberg snapshots. So the run reads each table's snapshot id before
@@ -30,11 +30,11 @@ from mlflow.models import infer_signature
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor, plot_importance
 
-from airq.config import EXPERIMENT, MODEL_NAME, TABLES
-from airq.feature_store import FEATURE_SETS, store
-from airq.iceberg import catalog
-from airq.model_registry import role
-from airq.models import DailyAirQuality, DailyWeather
+from airq.core.config import EXPERIMENT, MODEL_NAME, TABLES
+from airq.core.models import DailyAirQuality, DailyWeather
+from airq.stores.feature_store import FEATURE_SETS, store
+from airq.stores.iceberg import catalog
+from airq.stores.model_registry import role
 
 matplotlib.use("Agg")  # plots go to files only, so training needs no display
 

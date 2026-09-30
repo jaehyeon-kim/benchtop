@@ -1,13 +1,20 @@
 """Connects to the Iceberg catalog and derives the table schemas from the pydantic models."""
 
+import logging
 import warnings
 from datetime import date
 
 import pyarrow as pa
 from pydantic import AwareDatetime, BaseModel
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.exceptions import NoSuchNamespaceError
 
-from airq.config import CATALOG, NAMESPACE, PREDICTIONS, TABLES
+from airq.core.config import CATALOG, NAMESPACE, PREDICTIONS, TABLES
+from airq.stores import s3 as s3_store
+
+logger = logging.getLogger(__name__)
+
+_WAREHOUSE_BUCKET = "warehouse"
 
 # An overwrite of a day or an as-of date that has no rows yet is expected.
 warnings.filterwarnings(
@@ -48,7 +55,7 @@ def catalog() -> Catalog:
     """
     Returns the Iceberg REST catalog.
 
-    The PYICEBERG_CATALOG__ODCTL__* variables configure it. `airq.config` sets them on
+    The PYICEBERG_CATALOG__ODCTL__* variables configure it. `airq.core.config` sets them on
     the host.
 
     Returns:
@@ -90,4 +97,35 @@ def to_arrow(model: type[BaseModel], rows: list[BaseModel]) -> pa.Table:
     """
     return pa.Table.from_pylist(
         [r.model_dump() for r in rows], schema=arrow_schema(model)
+    )
+
+
+def drop_namespace(s3) -> None:
+    """
+    Drops every table in the namespace and the namespace, then deletes their files.
+
+    Dropping a table removes it from the catalog. The files are deleted separately, so
+    none are left in SeaweedFS whatever the catalog does with them.
+
+    Args:
+        s3 (botocore.client.S3): The S3 client.
+    """
+    cat = catalog()
+    try:
+        tables = cat.list_tables(NAMESPACE)
+    except NoSuchNamespaceError:
+        tables = []
+    for identifier in tables:
+        cat.drop_table(identifier)
+    if tables or NAMESPACE in {n[0] for n in cat.list_namespaces()}:
+        cat.drop_namespace(NAMESPACE)
+    prefix = f"{NAMESPACE}/"
+    keys = s3_store.keys(s3, _WAREHOUSE_BUCKET, prefix)
+    removed = s3_store.delete(s3, _WAREHOUSE_BUCKET, keys)
+    logger.info(
+        "Iceberg: dropped %d tables and %d files from s3://%s/%s",
+        len(tables),
+        removed,
+        _WAREHOUSE_BUCKET,
+        prefix,
     )

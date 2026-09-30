@@ -10,7 +10,7 @@ import os
 
 from pydantic import BaseModel
 
-from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
+from airq.core.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 
 if not os.path.exists("/.dockerenv"):  # Docker creates this file in every container
     os.environ.update(

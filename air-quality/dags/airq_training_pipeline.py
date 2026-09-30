@@ -11,7 +11,7 @@ The `airq` package is uploaded next to this file.
 
 from airflow.sdk import Asset, Param, dag, task
 
-from airq.config import MODELS_ASSET
+from airq.core.config import MODELS_ASSET
 
 _MODELS = Asset(MODELS_ASSET)
 

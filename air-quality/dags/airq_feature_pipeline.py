@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 from airflow.sdk import Asset, Param, dag, task
 
-from airq.config import DAILY_FEATURES_ASSET
+from airq.core.config import DAILY_FEATURES_ASSET
 
 _DAILY_FEATURES = Asset(DAILY_FEATURES_ASSET)
 
@@ -34,7 +34,7 @@ _DAILY_FEATURES = Asset(DAILY_FEATURES_ASSET)
 def airq_features():
     @task(outlets=[_DAILY_FEATURES])
     def load(params=None, dag_run=None, outlet_events=None):
-        from airq.days import resolve
+        from airq.core.days import resolve
         from airq.feature.load import load
 
         yesterday = (dag_run.run_after - timedelta(days=1)).date()

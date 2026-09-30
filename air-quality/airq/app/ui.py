@@ -17,7 +17,7 @@ import pandas as pd
 from nicegui import ui
 
 from airq.app import assistant, reports
-from airq.config import APP_PORT
+from airq.core.config import APP_PORT
 
 _HISTORY_DAYS = 60
 _ERROR_DAYS = 30

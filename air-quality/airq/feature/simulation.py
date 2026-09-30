@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from dynamic_des import IcebergStorageEgress, SimulationContext
 from pydantic import BaseModel
 
-from airq.config import TABLES
+from airq.core.config import TABLES
+from airq.core.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 from airq.feature.features import daily_features, in_window
-from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 
 _HOUR = 3600.0
 _MODELS = {model.__name__: model for model in TABLES}

@@ -8,11 +8,11 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from airq import model_registry
-from airq.config import CHALLENGER, CHAMPION, PREDICTIONS, TABLES
-from airq.iceberg import catalog
+from airq.core.config import CHALLENGER, CHAMPION, PREDICTIONS, TABLES
+from airq.core.models import DailyAirQuality, Prediction
 from airq.inference.infer import errors, score
-from airq.models import DailyAirQuality, Prediction
+from airq.stores import model_registry
+from airq.stores.iceberg import catalog
 
 
 def _scan(identifier: str) -> pd.DataFrame:

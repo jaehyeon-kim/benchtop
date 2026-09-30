@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from airq.config import LEADS, STATION
+from airq.core.config import LEADS, STATION
 from airq.inference.infer import _entity_rows, _feature_request, _predictions, errors
 
 

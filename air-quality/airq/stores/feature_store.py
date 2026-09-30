@@ -13,10 +13,11 @@ names.
 The registry is in PostgreSQL, where the Feast UI reads it. There is no online store,
 because nothing is served online.
 
-Run after changing a definition: python -m airq.feature_store --version v1   (or v2)
+Run after changing a definition: python -m airq.stores.feature_store --version v1   (or v2)
 """
 
 import argparse
+import logging
 import os
 import warnings
 from datetime import timedelta
@@ -31,13 +32,19 @@ from feast import (
     RequestSource,
     ValueType,
 )
+from feast.errors import ProjectNotFoundException, ProjectObjectNotFoundException
 from feast.infra.data_sources.contrib.iceberg_catalog.iceberg_source import (
     IcebergSource,
 )
+from feast.infra.registry.sql import feature_view_version_history
 from feast.on_demand_feature_view import on_demand_feature_view
 from feast.types import Float64, Int32, Int64, UnixTimestamp
+from sqlalchemy import delete
 
-from airq.config import CATALOG, FEAST_PROJECT, NAMESPACE
+from airq.core.config import CATALOG, FEAST_PROJECT, NAMESPACE
+
+# __name__ is "__main__" under -m
+logger = logging.getLogger("airq.stores.feature_store")
 
 # calendar_v2 is an on-demand view, which Feast labels experimental.
 warnings.filterwarnings(
@@ -141,6 +148,35 @@ VERSION_OBJECTS = {
     "v1": [station, lead, daily_weather, weather_v1],
     "v2": [station, lead, daily_weather, weather_v1, calendar, calendar_v2],
 }
+
+
+def delete_project() -> None:
+    """
+    Deletes the Feast project's entities and views, and the views' version history.
+
+    A project that is not registered is skipped. The log counts the objects it held.
+    """
+    st = store()
+    views = st.list_feature_views() + st.list_on_demand_feature_views()
+    entities = st.list_entities()
+    try:
+        st.delete_project(FEAST_PROJECT)
+    except (ProjectNotFoundException, ProjectObjectNotFoundException):
+        pass  # not registered
+    # delete_project leaves the views' version history, and registering the same view
+    # again then fails on a duplicate key.
+    with st.registry.write_engine.begin() as conn:
+        conn.execute(
+            delete(feature_view_version_history).where(
+                feature_view_version_history.c.project_id == FEAST_PROJECT
+            )
+        )
+    logger.info(
+        "Feast: deleted the project %s, with %d views and %d entities",
+        FEAST_PROJECT,
+        len(views),
+        len(entities),
+    )
 
 
 if __name__ == "__main__":

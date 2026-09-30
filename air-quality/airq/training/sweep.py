@@ -27,10 +27,10 @@ from itertools import pairwise
 import mlflow
 import pandas as pd
 
-from airq.config import EXPERIMENT, LEADS, TABLES
-from airq.feature_store import FEATURE_SETS, V1_COLUMNS
-from airq.iceberg import catalog
-from airq.models import DailyAirQuality
+from airq.core.config import EXPERIMENT, LEADS, TABLES
+from airq.core.models import DailyAirQuality
+from airq.stores.feature_store import FEATURE_SETS, V1_COLUMNS
+from airq.stores.iceberg import catalog
 from airq.training.train import fit_and_score, training_frame
 
 logger = logging.getLogger(

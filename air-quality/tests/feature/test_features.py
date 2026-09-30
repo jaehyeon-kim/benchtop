@@ -1,11 +1,11 @@
 from datetime import UTC, datetime, timedelta
 
-from airq.config import DEFAULT_SEED, STATION
+from airq.core.config import DEFAULT_SEED, STATION
+from airq.core.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 from airq.feature.features import daily_features, in_window
 from airq.feature.generator import generate
 from airq.feature.load import advance
 from airq.feature.simulation import HourlyPublisher
-from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 from tests.conftest import ORIGIN
 
 

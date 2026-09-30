@@ -6,15 +6,7 @@ Every error here is the mean absolute error (MAE) in µg/m³: how far a predicti
 
 The figures come from one run over 730 days of simulated data with seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. `tests/training/test_ordering.py` checks that.
 
-## Models
-
-| Model | Predicts from |
-|---|---|
-| baseline | yesterday's measured PM2.5, used as the prediction for today |
-| v1 | the weather forecast issued the day before: temperature, wind speed and hours of rain |
-| v2 | v1's weather features plus a weekend flag |
-
-v1 and v2 are XGBoost models with default settings. The baseline is not a trained model. It shows the error a model has to beat.
+The three forecasts are described in the [README](../README.md#what-you-will-build). v1 and v2 are XGBoost models with default settings.
 
 ## Test scores
 

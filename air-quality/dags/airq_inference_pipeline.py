@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from airflow.sdk import Asset, Param, dag, task
 
-from airq.config import DAILY_FEATURES_ASSET, MODELS_ASSET
+from airq.core.config import DAILY_FEATURES_ASSET, MODELS_ASSET
 
 _DAILY_FEATURES = Asset(DAILY_FEATURES_ASSET)
 _MODELS = Asset(MODELS_ASSET)
@@ -28,7 +28,7 @@ _MODELS = Asset(MODELS_ASSET)
 def airq_inference():
     @task
     def infer(params=None, dag_run=None, triggering_asset_events=None):
-        from airq.days import resolve
+        from airq.core.days import resolve
         from airq.inference.infer import run
 
         yesterday = (dag_run.run_after - timedelta(days=1)).date()

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from airq.feature_store import FEATURE_SETS, VERSION_OBJECTS, calendar_v2
+from airq.stores.feature_store import FEATURE_SETS, VERSION_OBJECTS, calendar_v2
 
 
 def test_calendar_view_flags_saturday_and_sunday():

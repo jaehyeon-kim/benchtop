@@ -4,7 +4,7 @@
 predicted beside it for comparison. Training gives each new version its alias, inference
 predicts with both, and promotion swaps them.
 
-Run: python -m airq.model_registry promote
+Run: python -m airq.stores.model_registry promote
 """
 
 import argparse
@@ -14,9 +14,13 @@ import mlflow
 from mlflow.entities.model_registry import ModelVersion
 from mlflow.exceptions import MlflowException
 
-from airq.config import CHALLENGER, CHAMPION, MODEL_NAME
+from airq.core.config import CHALLENGER, CHAMPION, EXPERIMENT, MODEL_NAME
+from airq.stores import s3 as s3_store
 
-logger = logging.getLogger("airq.model_registry")  # __name__ is "__main__" under -m
+# __name__ is "__main__" under -m
+logger = logging.getLogger("airq.stores.model_registry")
+
+_MLFLOW_BUCKET = "mlflow"
 
 
 def _version(alias: str, client=None) -> ModelVersion | None:
@@ -89,6 +93,67 @@ def promote(client=None) -> tuple[str, str]:
     client.set_registered_model_alias(MODEL_NAME, CHAMPION, challenger.version)
     client.set_registered_model_alias(MODEL_NAME, CHALLENGER, champion.version)
     return challenger.version, champion.version
+
+
+def _all_pages(search) -> list:
+    """
+    Collects every page of an MLflow search.
+
+    Args:
+        search (Callable[[str | None], PagedList]): Runs the search for a page token.
+
+    Returns:
+        list: The results of every page.
+    """
+    results, token = [], None
+    while True:
+        page = search(token)
+        results += list(page)
+        token = page.token
+        if not token:
+            return results
+
+
+def delete_experiment(s3) -> None:
+    """
+    Deletes the registered model, the experiment's runs and logged models, and its files.
+
+    The experiment itself stays, empty, because MLflow does not let a deleted
+    experiment's name be used again.
+
+    Args:
+        s3 (botocore.client.S3): The S3 client.
+    """
+    client = mlflow.MlflowClient()
+    try:
+        client.delete_registered_model(MODEL_NAME)
+        logger.info("MLflow: deleted the registered model %s", MODEL_NAME)
+    except MlflowException:
+        pass  # not registered
+    experiment = client.get_experiment_by_name(EXPERIMENT)
+    if experiment is None:
+        return
+    ids = [experiment.experiment_id]
+    models = _all_pages(
+        lambda token: client.search_logged_models(ids, page_token=token)
+    )
+    for model in models:
+        client.delete_logged_model(model.model_id)
+    runs = _all_pages(lambda token: client.search_runs(ids, page_token=token))
+    for run in runs:
+        client.delete_run(run.info.run_id)
+    prefix = f"{experiment.experiment_id}/"
+    removed = s3_store.delete(
+        s3, _MLFLOW_BUCKET, s3_store.keys(s3, _MLFLOW_BUCKET, prefix)
+    )
+    logger.info(
+        "MLflow: deleted %d runs of %s and %d files from s3://%s/%s",
+        len(runs),
+        EXPERIMENT,
+        removed,
+        _MLFLOW_BUCKET,
+        prefix,
+    )
 
 
 if __name__ == "__main__":

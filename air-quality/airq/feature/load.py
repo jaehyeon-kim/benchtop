@@ -16,12 +16,12 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from pydantic import BaseModel
 
-from airq import days
-from airq.config import DEFAULT_SEED, ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
+from airq.core import days
+from airq.core.config import DEFAULT_SEED, ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
+from airq.core.models import Observation
 from airq.feature.generator import generate
 from airq.feature.simulation import simulate
-from airq.iceberg import catalog, recreate_tables
-from airq.models import Observation
+from airq.stores.iceberg import catalog, recreate_tables
 
 logger = logging.getLogger(
     "airq.feature.load"
@@ -87,7 +87,9 @@ def load(
         properties = cat.load_table(TABLES[Observation]).properties
         origin = datetime.fromisoformat(properties[ORIGIN_PROPERTY])
         if start < origin:
-            raise SystemExit(f"{start.date()} is before the first day, {origin.date()}.")
+            raise SystemExit(
+                f"{start.date()} is before the first day, {origin.date()}."
+            )
         seed = int(properties[SEED_PROPERTY]) if seed is None else seed
 
     records = generate(origin, seed)
@@ -102,7 +104,9 @@ def load(
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--n-days", type=int, default=1, help="days to load (default: 1)")
+    parser.add_argument(
+        "--n-days", type=int, default=1, help="days to load (default: 1)"
+    )
     parser.add_argument(
         "--until",
         type=days.argument,

@@ -14,8 +14,8 @@ from datetime import datetime, timedelta
 import numpy as np
 from pydantic import BaseModel
 
-from airq.config import STATION
-from airq.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
+from airq.core.config import STATION
+from airq.core.models import DailyAirQuality, DailyWeather, Observation, WeatherForecast
 
 # The column that places each row on a day, for choosing and replacing a day's rows.
 DAY_COLUMN = {

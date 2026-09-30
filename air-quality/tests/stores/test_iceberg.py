@@ -1,8 +1,8 @@
 import pyarrow as pa
 
-from airq.config import TABLES
-from airq.iceberg import arrow_schema
-from airq.models import Observation, Prediction
+from airq.core.config import TABLES
+from airq.core.models import Observation, Prediction
+from airq.stores.iceberg import arrow_schema
 
 
 def test_schema_matches_each_model():

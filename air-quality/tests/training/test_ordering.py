@@ -3,7 +3,7 @@
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from xgboost import XGBRegressor
 
-from airq.feature_store import FEATURE_SETS
+from airq.stores.feature_store import FEATURE_SETS
 from tests.conftest import daily_frame
 
 

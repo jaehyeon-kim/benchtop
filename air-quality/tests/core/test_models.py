@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from airq.models import Observation
+from airq.core.models import Observation
 from tests.conftest import ORIGIN
 
 

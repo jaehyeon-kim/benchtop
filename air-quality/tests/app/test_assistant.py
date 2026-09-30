@@ -5,7 +5,7 @@ from strands.models.ollama import OllamaModel
 
 from airq.app import assistant, reports
 from airq.app.assistant import _model
-from airq.config import OLLAMA_HOST
+from airq.core.config import OLLAMA_HOST
 
 SATURDAY = date(2026, 9, 26)
 

@@ -51,7 +51,7 @@ They share only two stores. The **feature store** holds the features, so trainin
 
 Steps 1 to 3 run from the terminal. [Running the pipelines in Airflow](#running-the-pipelines-in-airflow) then runs the same steps on a schedule.
 
-To start again at any point, `python -m airq.cleanup` removes everything this project has created and keeps the services running. See [Clean up](#clean-up).
+To start again at any point, `python -m airq.stores.cleanup` removes everything this project has created and keeps the services running. See [Clean up](#clean-up).
 
 The three forecasts compared:
 
@@ -75,10 +75,6 @@ The baseline is not a trained model. It is the error a model has to beat.
 | Apache Airflow | runs the pipelines on a schedule |
 | NiceGUI, Strands and Ollama | the web app, its chat agent, and the local language model the agent uses |
 | [odctl](https://github.com/jaehyeon-kim/odctl) | starts all the services above with Docker Compose |
-
-### Data
-
-The simulation writes two hourly tables, `weather_forecasts` and `observations` (the measured PM2.5), for a single simulated station. The feature pipeline builds everything else from them. [Data](docs/data.md) lists every table's columns and has example queries.
 
 ## Environment setup
 
@@ -116,7 +112,7 @@ The web UIs:
 - Feast: http://127.0.0.1:8890
 - SeaweedFS file browser: http://127.0.0.1:8889
 
-The code also connects to the Iceberg catalog, SeaweedFS's S3 API and PostgreSQL. [`airq/config.py`](./airq/config.py) sets their addresses, so there is nothing to configure.
+The code also connects to the Iceberg catalog, SeaweedFS's S3 API and PostgreSQL. [`airq/core/config.py`](./airq/core/config.py) sets their addresses, so there is nothing to configure.
 
 ## Step 1: v1 pipelines
 
@@ -130,20 +126,22 @@ The feature pipeline writes four Iceberg tables in the `airq` namespace:
 - `daily_weather`: the forecast for each day, averaged over its 24 hours. It has one row for each day and lead, where the lead is how many days ahead the forecast was made (1 to 7).
 - `daily_air_quality`: each day's mean PM2.5, which is what the models predict, with the weekend flag and the previous day's mean.
 
+The data is for one simulated station. [Data](docs/data.md) lists every column, and has queries to look at the tables.
+
 One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. A dynamic-des simulation writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
 
 ```bash
 python -m airq.feature.load --n-days 730 --seed 42 --reset
 ```
 
-Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in `airq/models.py`.
+Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in `airq/core/models.py`.
 
 ### Register v1's features
 
-Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in `airq/feature_store.py`. Register it once, and again after changing it:
+Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in `airq/stores/feature_store.py`. Register it once, and again after changing it:
 
 ```bash
-python -m airq.feature_store --version v1
+python -m airq.stores.feature_store --version v1
 ```
 
 The Feast UI at http://127.0.0.1:8890 then shows the project `airq` with the `weather_v1` view.
@@ -211,7 +209,7 @@ It finds that a weekend flag cuts the error by about 60%, because the simulation
 
 ### Register v2's features
 
-v2 reads two views, defined in `airq/feature_store.py`:
+v2 reads two views, defined in `airq/stores/feature_store.py`:
 
 | View | Features | Used by |
 |---|---|---|
@@ -226,12 +224,12 @@ The two views get their values in different ways:
 | Computed from | the hourly weather forecasts | the date of the day asked for |
 | Kept | in the Iceberg table `daily_weather` | nowhere |
 
-Most features are stored, because they are built from other data, which takes time and is done once. A feature that follows from the request alone, such as whether a date is a Saturday or Sunday, can be computed on demand instead. Here it has to be. `daily_air_quality` also has a weekend flag, but only for days that have been measured, and inference predicts days that have not happened yet. [Concepts](docs/concepts.md#three-kinds-of-data-transformation) explains the kinds of feature in more detail.
+The weekend flag has to be computed on demand, because inference predicts days that have no stored row yet. [Concepts](docs/concepts.md#three-kinds-of-data-transformation) explains why.
 
 Register v2's views. `weather_v1` is unchanged, so v1 keeps working:
 
 ```bash
-python -m airq.feature_store --version v2
+python -m airq.stores.feature_store --version v2
 ```
 
 ### Train v2
@@ -258,7 +256,7 @@ On the held-out test days of the run in [Results](docs/results.md#test-scores), 
 Promotion swaps the two aliases: v2 becomes the champion, and v1 becomes the challenger. Inference keeps predicting with both, so the app can still compare them.
 
 ```bash
-python -m airq.model_registry promote
+python -m airq.stores.model_registry promote
 python -m airq.inference.infer                                 # forecast with v2 as the champion
 ```
 
@@ -300,7 +298,7 @@ Open http://127.0.0.1:8090. The header shows the model versions in use. To use a
 
 ### Assistant tab
 
-Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. For each question, the model picks a tool, the tool reads the data, and the model answers from the result, so every number comes from the data. The agent is in `airq/app/assistant.py`.
+Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. The model answers each question by calling one of them, so every number comes from the data ([Concepts](docs/concepts.md#language-models-with-tools) explains how). The agent is in `airq/app/assistant.py`.
 
 Questions it answers well:
 
@@ -333,7 +331,7 @@ Press **Refresh** in the app, and the charts move forward one day.
 
 ## Running the pipelines in Airflow
 
-Airflow runs the same pipelines as DAGs, its name for workflows, and runs them on a schedule. It is an alternative to the terminal commands in Steps 1 and 2: its backfill replaces the data those commands wrote. Run `python -m airq.cleanup` first to start from an empty stack ([Clean up](#clean-up)).
+Airflow runs the same pipelines as DAGs, its name for workflows, and runs them on a schedule. It is an alternative to the terminal commands in Steps 1 and 2: its backfill replaces the data those commands wrote. Run `python -m airq.stores.cleanup` first to start from an empty stack ([Clean up](#clean-up)).
 
 Airflow loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds. Copy the `dags` folder and the `airq` package its tasks import there, and copy them again whenever you change either:
 
@@ -360,9 +358,9 @@ The steps map onto them in the same order:
 | Train v1 | `airq_training` | `{"version": "v1"}` |
 | Load a day | `airq_features` | `{"until": "today"}` |
 | Train v2 | `airq_training` | `{"version": "v2"}` |
-| Promote v2 | none: run `python -m airq.model_registry promote` | |
+| Promote v2 | none: run `python -m airq.stores.model_registry promote` | |
 
-Registering the features with `python -m airq.feature_store` also stays a terminal command, before each training step. Inference has no step of its own, because Airflow starts it after each daily run and each training run.
+Registering the features with `python -m airq.stores.feature_store` also stays a terminal command, before each training step. Inference has no step of its own, because Airflow starts it after each daily run and each training run.
 
 In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_features` is first unpaused, it runs straight away for the most recent day.
 
@@ -375,7 +373,7 @@ docker exec airflow airflow dags trigger airq_features --conf '{"n_days": 730, "
 docker exec airflow airflow dags list-runs airq_features        # wait for success
 
 # 2. v1's training; inference follows by itself
-python -m airq.feature_store --version v1
+python -m airq.stores.feature_store --version v1
 docker exec airflow airflow dags unpause airq_inference
 docker exec airflow airflow dags unpause airq_training
 docker exec airflow airflow dags trigger airq_training --conf '{"version": "v1"}'
@@ -386,12 +384,12 @@ docker exec airflow airflow dags trigger airq_features --conf '{"until": "today"
 docker exec airflow airflow dags list-runs airq_inference       # wait for success
 
 # 4. v2's training; inference follows by itself
-python -m airq.feature_store --version v2
+python -m airq.stores.feature_store --version v2
 docker exec airflow airflow dags trigger airq_training --conf '{"version": "v2"}'
 docker exec airflow airflow dags list-runs airq_inference       # wait for success
 
 # 5. promotion
-python -m airq.model_registry promote
+python -m airq.stores.model_registry promote
 ```
 
 If a DAG is missing, `docker exec airflow airflow dags list-import-errors` shows why.
@@ -406,11 +404,11 @@ The tests need none of the services:
 python -m pytest tests
 ```
 
-They cover the simulation and feature code, the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases and the assistant's tools. GitHub runs them, after the repository's lint checks, on every push to `main`.
+They cover the simulation and feature code, the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases, the assistant's tools, and which DAG files the clean-up deletes. GitHub runs them, after the repository's lint checks, on every push to `main`.
 
 ## Clean up
 
-`python -m airq.cleanup` removes everything this project has written, and keeps the services running:
+`python -m airq.stores.cleanup` removes everything this project has written, and keeps the services running:
 
 - **Airflow:** the DAG files in `s3://airflow/dags`, then the DAGs and their run history.
 - **MLflow:** the model `airq_pm25`, and the runs and files of the experiment `airq`. The experiment stays, empty, because MLflow does not let a deleted experiment's name be used again.
@@ -420,7 +418,7 @@ They cover the simulation and feature code, the value bounds, Feast's point-in-t
 It touches nothing else on the stack. Run it to retry the steps from the start, without restarting the services:
 
 ```bash
-python -m airq.cleanup
+python -m airq.stores.cleanup
 ```
 
 ## Tear down

@@ -15,9 +15,9 @@ More detail is in two documents:
 
 Three parts do the work:
 
-- The **simulation** is the shop. It writes rows to six PostgreSQL tables, and changes them as orders move on.
-- **Debezium** reads each change from PostgreSQL's write-ahead log, the record of every change the database makes, and writes it to a Kafka topic for its table.
-- The **S3 sink** reads those topics and saves the changes as files in SeaweedFS.
+- **Simulation:** the shop itself. It writes rows to six PostgreSQL tables, and changes them as orders move on.
+- **Debezium:** reads each change from PostgreSQL's write-ahead log, the record of every change the database makes, and writes it to a Kafka topic for its table.
+- **S3 sink:** reads those topics and saves the changes as files in SeaweedFS.
 
 The simulation never writes to Kafka. It only writes to its database, and every change still reaches Kafka. That is the point of CDC, which [Concepts](docs/concepts.md#change-data-capture-and-the-write-ahead-log) compares with querying the tables for changes.
 
@@ -70,7 +70,6 @@ uv pip install -r requirements.txt
 ### Services
 
 ```bash
-odctl init                          # copy odctl's configuration into ./.odctl
 odctl up postgres kafka-lite storage
 ```
 

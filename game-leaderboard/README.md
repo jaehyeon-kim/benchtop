@@ -13,10 +13,10 @@ More detail is in two documents:
 
 Four parts do the work:
 
-- The **simulation** plays the game in real time with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and sends each score to the Kafka topic `game-scores`.
-- The **Flink jobs**, one per leaderboard, read the topic and keep their leaderboard up to date as scores arrive. A Flink SQL query of this kind never finishes: it keeps its result current for as long as it runs. [Concepts](docs/concepts.md#continuous-queries-and-dynamic-tables) explains how.
-- **PostgreSQL** holds each leaderboard as a table with one row per rank.
-- The **dashboard** reads the four tables and redraws them every 2 seconds.
+- **Simulation:** plays the game in real time with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and sends each score to the Kafka topic `game-scores`.
+- **Flink jobs:** one per leaderboard. Each reads the topic and keeps its leaderboard up to date as scores arrive. A Flink SQL query of this kind never finishes: it keeps its result current for as long as it runs. [Concepts](docs/concepts.md#continuous-queries-and-dynamic-tables) explains how.
+- **PostgreSQL:** holds each leaderboard as a table with one row per rank.
+- **Dashboard:** reads the four tables and redraws them every 2 seconds.
 
 ### What you will build
 
@@ -65,7 +65,6 @@ uv pip install -r requirements.txt
 ### Services
 
 ```bash
-odctl init                          # copy odctl's configuration into ./.odctl
 odctl up kafka-lite flink-lite postgres
 ```
 

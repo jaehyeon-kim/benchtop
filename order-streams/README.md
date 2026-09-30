@@ -46,7 +46,6 @@ uv tool install odctl
 Start the services:
 
 ```bash
-odctl init                          # copy odctl's configuration into ./.odctl
 odctl up kafka-lite
 ```
 

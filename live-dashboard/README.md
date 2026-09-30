@@ -15,9 +15,9 @@ More detail is in two documents:
 
 Three parts do the work:
 
-- The **simulation** plays the shop: visitors arrive, browse and buy, and warehouse pickers pack the orders. It writes each new row, and each change to an order, to PostgreSQL.
-- The **WebSocket server** reads the order items of the last five minutes and pushes them to each connected dashboard. [Concepts](docs/concepts.md#pushing-data-compared-with-polling-it) explains why the server pushes rather than the dashboards asking.
-- The **dashboards** turn each batch of records into three numbers (orders, order items and total sales) and two charts (revenue by country and by traffic source).
+- **Simulation:** plays the shop. Visitors arrive, browse and buy, and warehouse pickers pack the orders. It writes each new row, and each change to an order, to PostgreSQL.
+- **WebSocket server:** reads the order items of the last five minutes and pushes them to each connected dashboard. [Concepts](docs/concepts.md#pushing-data-compared-with-polling-it) explains why the server pushes rather than the dashboards asking.
+- **Dashboards:** turn each batch of records into three numbers (orders, order items and total sales) and two charts (revenue by country and by traffic source).
 
 The two dashboards read the same feed, so they show the same numbers.
 
@@ -73,7 +73,6 @@ uv pip install -r requirements.txt
 ### Services
 
 ```bash
-odctl init                          # copy odctl's configuration into ./.odctl
 odctl up postgres                   # start PostgreSQL
 ```
 

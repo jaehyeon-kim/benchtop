@@ -141,7 +141,6 @@ Step 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serv
 
 ```bash
 (cd recsys-trainer && ./gradlew shadowJar)   # build the Flink job's JAR
-odctl init                                   # copy odctl's configuration into ./.odctl
 odctl up kafka-lite flink-full valkey        # Kafka, Flink with 3 TaskManagers, and Valkey
 ```
 

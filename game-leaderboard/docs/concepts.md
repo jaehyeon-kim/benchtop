@@ -103,7 +103,7 @@ AVG(CAST(score AS DOUBLE)) OVER (
 
 This averages the player's scores over the 10 seconds up to each score. `RANGE` measures the window in values of the `ORDER BY` column, here seconds, rather than in rows. A second window does the same over 60 seconds, and `03-hot-streaks.sql` keeps each player's latest row, divides the two averages and ranks the result. Because it is ordered by event time:
 
-- **The result is about 5 seconds behind.** Flink holds each row until the watermark passes its time, then computes it.
+- **Results lag by about 5 seconds.** Flink holds each row until the watermark passes its time, then computes it.
 - **Late scores are left out.** A score whose time is not after the player's last computed row is dropped, and counted in the job's `numLateRecordsDropped` metric.
 
 ## Joining two aggregates

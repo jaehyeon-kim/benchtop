@@ -16,9 +16,9 @@ More detail is in three documents:
 
 Three pipelines do the work, and they never call each other:
 
-- The **feature pipeline** turns simulated weather forecasts and PM2.5 readings into daily features.
-- The **training pipeline** trains a model on those features.
-- The **inference pipeline** predicts the next seven days with the trained model.
+- **Feature pipeline:** turns simulated weather forecasts and PM2.5 readings into daily features.
+- **Training pipeline:** trains a model on those features.
+- **Inference pipeline:** predicts the next seven days with the trained model.
 
 They share only two stores. The **feature store** holds the features, so training and prediction read the same values. The **model registry** holds every trained model and marks the one in use. [Concepts](docs/concepts.md#feature-training-and-inference-pipelines) explains why the pipelines are split this way.
 

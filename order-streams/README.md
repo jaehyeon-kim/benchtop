@@ -46,7 +46,7 @@ Steps 3 to 5 need the Avro producer from step 2 running. To start again at any p
 You need Docker (Docker Desktop, OrbStack or Docker Engine), JDK 17 and odctl. Install odctl with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install odctl
+uv tool install odctl==0.9.0
 ```
 
 `./gradlew` downloads Gradle on its first run. Run every command from this folder.

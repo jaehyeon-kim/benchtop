@@ -11,4 +11,4 @@ mabwiser>=2.7.4
 mab2rec>=1.3.0
 redis>=7.1.0,<8.0.0
 confluent-kafka[avro]>=2.3.0
-odctl
+odctl==0.9.0

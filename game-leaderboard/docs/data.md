@@ -4,7 +4,7 @@ The [game-leaderboard](../README.md) events and tables.
 
 ## Score events
 
-One event per round goes to the topic `game-scores` in Avro, under the Karapace subject `game-scores-value`. The model, with bounds checked before sending, is in `leaderboard/core/models.py`.
+One event per round goes to the topic `game-scores` in Avro, under the Karapace subject `game-scores-value`. The model, with bounds checked before sending, is in [`models.py`](../leaderboard/core/models.py).
 
 | Field | Type | Description |
 |---|---|---|
@@ -17,13 +17,13 @@ One event per round goes to the topic `game-scores` in Avro, under the Karapace 
 
 A new team can reuse a dissolved team's name, so the jobs group by `team_id`, and two rows can show the same name.
 
-In Flink, `00-ddl.sql` reads the topic as the table `scores`, with `event_time_millis` as a timestamp column, `event_time`, and a [watermark](concepts.md#watermarks-and-late-events) 5 seconds behind.
+In Flink, [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) reads the topic as the table `scores`, with `event_time_millis` as a timestamp column, `event_time`, and a [watermark](concepts.md#watermarks-and-late-events) 5 seconds behind.
 
 ## Leaderboard tables
 
-The four tables are in the PostgreSQL schema `game`, defined in `leaderboard/jobs/tables.sql`, with one row per rank, keyed on `rnk`. Each has `rnk` (bigint, 1 to 10) as its first column.
+The four tables are in the PostgreSQL schema `game`, defined in [`tables.sql`](../leaderboard/jobs/tables.sql), with one row per rank, keyed on `rnk`. Each has `rnk` (bigint, 1 to 10) as its first column.
 
-`top_teams`: the 10 teams with the highest total score, written by `01-top-teams.sql`.
+`top_teams`: the 10 teams with the highest total score, written by [`01-top-teams.sql`](../leaderboard/jobs/01-top-teams.sql).
 
 | Column | Type | Description |
 |---|---|---|
@@ -31,7 +31,7 @@ The four tables are in the PostgreSQL schema `game`, defined in `leaderboard/job
 | `team_name` | text | The team's name |
 | `total_score` | bigint | Every score the team's players have earned, including those who left |
 
-`top_players`: the 10 players with the highest total score, written by `02-top-players.sql`.
+`top_players`: the 10 players with the highest total score, written by [`02-top-players.sql`](../leaderboard/jobs/02-top-players.sql).
 
 | Column | Type | Description |
 |---|---|---|
@@ -39,7 +39,7 @@ The four tables are in the PostgreSQL schema `game`, defined in `leaderboard/job
 | `team_name` | text | The player's team |
 | `total_score` | bigint | Every score the player has earned |
 
-`hot_streaks`: the 10 players scoring furthest above their usual rate, as of each player's latest score, written by `03-hot-streaks.sql`.
+`hot_streaks`: the 10 players scoring furthest above their usual rate, as of each player's latest score, written by [`03-hot-streaks.sql`](../leaderboard/jobs/03-hot-streaks.sql).
 
 | Column | Type | Description |
 |---|---|---|
@@ -48,7 +48,7 @@ The four tables are in the PostgreSQL schema `game`, defined in `leaderboard/job
 | `long_term_avg` | double precision | The player's average score over the 60 seconds up to their latest score |
 | `hotness` | double precision | `short_term_avg` divided by `long_term_avg`; above 1 is above the player's usual rate |
 
-`team_mvps`: each team's top scorer and their share of the team's total, then the 10 players with the largest shares, written by `04-team-mvps.sql`.
+`team_mvps`: each team's top scorer and their share of the team's total, then the 10 players with the largest shares, written by [`04-team-mvps.sql`](../leaderboard/jobs/04-team-mvps.sql).
 
 | Column | Type | Description |
 |---|---|---|
@@ -57,12 +57,3 @@ The four tables are in the PostgreSQL schema `game`, defined in `leaderboard/job
 | `player_total` | bigint | Every score the player has earned for the team |
 | `team_total` | bigint | Every score the team's players have earned |
 | `contrib_ratio` | double precision | `player_total` divided by `team_total` |
-
-## Queries
-
-```bash
-# how many robots are in the top players and the hot streaks
-docker exec postgres psql -U user -d odctl -c "SELECT 'top_players' AS board, count(*) FILTER (WHERE user_id LIKE 'RBT%') AS robots FROM game.top_players UNION ALL SELECT 'hot_streaks', count(*) FILTER (WHERE user_id LIKE 'RBT%') FROM game.hot_streaks"
-```
-
-It shows the live change in [Step 4](../README.md#step-4-change-the-game-while-it-runs). [Step 2](../README.md#step-2-submit-the-flink-jobs) shows how to read a whole table.

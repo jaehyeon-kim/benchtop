@@ -17,21 +17,21 @@ An **HTTP request** is one question and one answer, after which the exchange is 
 
 A **WebSocket** starts as an HTTP request and then stays open. The browser sends the headers `Upgrade: websocket` and `Connection: Upgrade`. The server answers with status `101 Switching Protocols`. From then on the connection carries messages both ways until either side closes it.
 
-Here `sales/api/server.py` declares the endpoint with FastAPI's `@app.websocket("/ws")`. For each connection it calls `accept`, then loops: read the records, send them with `send_json` as one text message of JSON, and sleep. The loop ends when the client leaves, and the server closes its PostgreSQL connection. Each dashboard holds its own connection, and the server keeps no list of clients.
+Here [`server.py`](../sales/api/server.py) declares the endpoint with FastAPI's `@app.websocket("/ws")`. For each connection it calls `accept`, then loops: read the records, send them with `send_json` as one text message of JSON, and sleep. The loop ends when the client leaves, and the server closes its PostgreSQL connection. Each dashboard holds its own connection, and the server keeps no list of clients.
 
 ## Lookback window and refresh interval
 
-Two settings in `sales/core/config.py` decide what the dashboards see: `LOOKBACK_MINUTES = 5`, the window of order items in each message, and `REFRESH_SECONDS = 5`, how often each connection sends one.
+Two settings in [`config.py`](../sales/core/config.py) decide what the dashboards see: `LOOKBACK_MINUTES = 5`, the window of order items in each message, and `REFRESH_SECONDS = 5`, how often each connection sends one.
 
 Each message holds the whole window again, not only what changed. So the dashboards recalculate everything from each message, and one that connects late is correct from its first message. The cost grows with the number of connections, because each runs its own query: ten open dashboards run it ten times every five seconds. It also grows with a longer window, which sends more rows, and a shorter interval, which queries more often for data that is only a little newer.
 
-The query, `RECENT_ITEMS` in `sales/stores/postgres.py`, filters with `clock_timestamp()`. PostgreSQL's `current_timestamp` returns the start time of the current transaction, while `clock_timestamp()` returns the actual current time.
+The query, `RECENT_ITEMS` in [`postgres.py`](../sales/stores/postgres.py), filters with `clock_timestamp()`. PostgreSQL's `current_timestamp` returns the start time of the current transaction, while `clock_timestamp()` returns the actual current time.
 
 ## Streamlit's rerun model
 
 A Streamlit app is a Python script that Streamlit runs from top to bottom, adding an element to the page for each `st.*` call. When a user changes a widget, such as a checkbox, Streamlit runs the whole script again with the widget's new value. This is a **rerun**.
 
-A rerun suits a page that changes when the user acts. A live feed must change while the user does nothing, so `sales/dashboard/streamlit_app.py` keeps its script running:
+A rerun suits a page that changes when the user acts. A live feed must change while the user does nothing, so [`streamlit_app.py`](../sales/dashboard/streamlit_app.py) keeps its script running:
 
 1. `st.empty()` reserves two slots, for the cards and the charts. Writing to a slot again replaces what it holds.
 2. When **Connect to WS Server** is ticked, the script calls `asyncio.run(_follow(...))`, which connects with aiohttp and loops over the messages.
@@ -41,7 +41,7 @@ Unticking the box asks for a rerun. Streamlit checks for that request each time 
 
 ## React state and effects
 
-A React component is a function that returns what the page should show. React calls it again, a **re-render**, when its data changes. React's **hooks** are functions, with names that start with `use`, that a component calls to use React's features. `useDashboard`, in `nextjs/src/lib/useDashboard.ts`, is this project's own hook, built from three of React's:
+A React component is a function that returns what the page should show. React calls it again, a **re-render**, when its data changes. React's **hooks** are functions, with names that start with `use`, that a component calls to use React's features. `useDashboard`, in [`useDashboard.ts`](../nextjs/src/lib/useDashboard.ts), is this project's own hook, built from three of React's:
 
 - **`useState`** adds a state variable. Calling its set function stores a new value and triggers a re-render. The cards and the chart options are kept this way.
 - **`useRef`** holds a value that is not needed for rendering, and changing it triggers no re-render. The last message's numbers are kept there, to work out each card's change.
@@ -49,11 +49,11 @@ A React component is a function that returns what the page should show. React ca
 
 The WebSocket comes from `react-use-websocket`. `useWebSocket(url, options, connect)` returns the latest message, parsed as JSON, as `lastJsonMessage`. The checkbox's value is passed as `connect`, and `false` closes the connection. `shouldReconnect: () => true` reconnects if the server goes away, and `share: false` gives each hook its own connection.
 
-Next.js renders components on the server by default. A file that starts with `"use client"` is an entry point to the browser instead, which a component needs for state, events or browser features. `nextjs/src/app/page.tsx` has it, because it holds the checkbox's state and the WebSocket. `nextjs/src/app/providers.tsx` has it because `layout.tsx`, a server component, renders it, and NextUI's provider is itself a client component.
+Next.js renders components on the server by default. A file that starts with `"use client"` is an entry point to the browser instead, which a component needs for state, events or browser features. [`page.tsx`](../nextjs/src/app/page.tsx) has it, because it holds the checkbox's state and the WebSocket. [`providers.tsx`](../nextjs/src/app/providers.tsx) has it because [`layout.tsx`](../nextjs/src/app/layout.tsx), a server component, renders it, and NextUI's provider is itself a client component.
 
 ## ECharts options
 
-ECharts draws a chart from one object of options. The two dashboards build the same options, in `sales/dashboard/metrics.py` and `nextjs/src/lib/processing.ts`: a category `xAxis` with its labels rotated 75 degrees, a value `yAxis`, one bar series with `colorBy: "data"` for a colour per bar, and a `grid`.
+ECharts draws a chart from one object of options. The two dashboards build the same options, in [`metrics.py`](../sales/dashboard/metrics.py) and [`processing.ts`](../nextjs/src/lib/processing.ts): a category `xAxis` with its labels rotated 75 degrees, a value `yAxis`, one bar series with `colorBy: "data"` for a colour per bar, and a `grid`.
 
 A **grid** is the rectangle the axes are drawn in. By default, `grid.left`, `grid.right`, `grid.top` and `grid.bottom` place the axes themselves, and the labels hang outside them. In ECharts 5.6.0 the default bottom is 70 pixels, which is too small for a rotated label such as "United Kingdom", so without `containLabel` the label is cut off. With `grid.containLabel: true`, those settings place the rectangle that holds the axes and their labels, so the labels always fit. The ECharts documentation recommends it when the length of the labels is hard to predict. streamlit-echarts bundles ECharts 6.1.0, which marks `containLabel` deprecated in favour of `grid.outerBoundsMode` but still honours it.
 
@@ -61,7 +61,7 @@ A **grid** is the rectangle the axes are drawn in. By default, `grid.left`, `gri
 
 A **discrete-event simulation** models a system as events at points in time: a visitor arrives, an order ships. Nothing changes between two events, so the model jumps from one to the next. dynamic-des builds such models on SimPy, and adds live parameters and connectors to databases and message queues.
 
-The parts of the shop's model, in `sales/simulation/run.py`:
+The parts of the shop's model, in [`run.py`](../sales/simulation/run.py):
 
 - **Processes:** a process is a Python generator that waits with `yield`. `visit` is one visitor, and `fulfil` is one order. `ctx.spawn` starts one, so many run at once.
 - **Arrivals:** `add_arrival("visitor", dist="exponential", rate=4.0)` sets the gaps between visitors. An exponential gap with rate 4 has a mean of a quarter of a second, so four visitors arrive a second on average, at random moments.

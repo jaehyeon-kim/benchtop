@@ -1,4 +1,4 @@
-# ecommerce-cdc
+# Change Data Capture with Debezium
 
 Change data capture (CDC) on a simulated online shop. A simulation writes the shop's activity to PostgreSQL in real time: new users, orders and page views, and updates when an order changes status or a user moves address. Debezium reads every change from PostgreSQL's log and sends it to Kafka, and a sink connector saves the changes as files in object storage. Everything runs on your own machine.
 
@@ -9,7 +9,7 @@ It is described in a post: [Change Data Capture on a Simulated Online Shop with 
 More detail is in two documents:
 
 - [Concepts](docs/concepts.md): how CDC, Debezium, Kafka Connect, Avro and the simulation work, explained from the start.
-- [Data](docs/data.md): every table's columns, the topics and schemas, and a full change event.
+- [Data](docs/data.md): every table's columns, the topics and schemas, and the shape of a change event.
 
 ## Architecture
 
@@ -50,10 +50,10 @@ To start again at any point, `python -m ecommerce.stores.cleanup` removes everyt
 
 The simulation's model, with the dynamic-des feature behind each part, is in [Concepts](docs/concepts.md#simulation-model). The code is in four folders:
 
-- `ecommerce/core/`: the settings (`config.py`) and the row models with their bounds (`models.py`).
-- `ecommerce/simulation/`: the shop's rules as plain functions (`shop.py`), the fixed data: distribution centres, cities and products (`catalogue.py`), the dynamic-des model (`run.py`) and live changes (`control.py`).
-- `ecommerce/cdc/`: the two connectors' settings as JSON files, and `connectors.py`, which deploys them.
-- `ecommerce/stores/`: PostgreSQL, Kafka, Kafka Connect and S3, each with the function that deletes this project's objects, and `cleanup.py`, which calls them in order.
+- [`ecommerce/core/`](ecommerce/core): the settings ([`config.py`](ecommerce/core/config.py)) and the row models with their bounds ([`models.py`](ecommerce/core/models.py)).
+- [`ecommerce/simulation/`](ecommerce/simulation): the shop's rules as plain functions ([`shop.py`](ecommerce/simulation/shop.py)), the fixed data: distribution centres, cities and products ([`catalogue.py`](ecommerce/simulation/catalogue.py)), the dynamic-des model ([`run.py`](ecommerce/simulation/run.py)) and live changes ([`control.py`](ecommerce/simulation/control.py)).
+- [`ecommerce/cdc/`](ecommerce/cdc): the two connectors' settings as JSON files, and [`connectors.py`](ecommerce/cdc/connectors.py), which deploys them.
+- [`ecommerce/stores/`](ecommerce/stores): PostgreSQL, Kafka, Kafka Connect and S3, each with the function that deletes this project's objects, and [`cleanup.py`](ecommerce/stores/cleanup.py), which calls them in order.
 
 ## Environment setup
 
@@ -75,6 +75,25 @@ uv pip install -r requirements.txt
 odctl up postgres kafka-lite storage
 ```
 
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: kafka-lite, postgres, storage
+
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container       ┃ Service      ┃ State   ┃ Health  ┃ Ports                                                   ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ connect         │ connect      │ running │ -       │ 8083 ➡️  8083/tcp                                       │
+│ kafka           │ kafka        │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
+│ kafka-ui        │ kafka-ui     │ running │ -       │ 8086 ➡️  8080/tcp                                       │
+│ karapace        │ karapace     │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ odctl-init-deps │ init-deps    │ exited  │ -       │ -                                                       │
+│ postgres        │ postgres     │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
+│ seaweed         │ seaweed      │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ seaweed-init    │ seaweed-init │ exited  │ -       │ -                                                       │
+└─────────────────┴──────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
+```
+
 odctl starts three profiles:
 
 - `postgres`: PostgreSQL, already set up for CDC. It runs with `wal_level=logical`, and has the schema `cdc` with the publication `cdc_pub`, which covers every table in that schema. [Concepts](docs/concepts.md#change-data-capture-and-the-write-ahead-log) explains both.
@@ -86,7 +105,7 @@ The web UIs:
 - Kafka UI: http://127.0.0.1:8086
 - SeaweedFS file browser: http://127.0.0.1:8889
 
-[`ecommerce/core/config.py`](./ecommerce/core/config.py) sets the addresses of PostgreSQL, Kafka, Connect, Karapace and SeaweedFS, so there is nothing to configure.
+[`config.py`](ecommerce/core/config.py) sets the addresses of PostgreSQL, Kafka, Connect, Karapace and SeaweedFS, so there is nothing to configure.
 
 ## Step 1: Run the simulation
 
@@ -106,11 +125,11 @@ A connector is a job that Kafka Connect runs: a source connector copies data int
 python -m ecommerce.cdc.connectors
 ```
 
-It sends `ecommerce/cdc/source.json` and `ecommerce/cdc/s3-sink.json` to Connect's REST API, which creates each connector, or updates it if it exists.
+It sends [`source.json`](ecommerce/cdc/source.json) and [`s3-sink.json`](ecommerce/cdc/s3-sink.json) to Connect's REST API, which creates each connector, or updates it if it exists.
 
-`source.json` tells Debezium to read the six tables through the publication `cdc_pub` and its own replication slot, `ecommerce_cdc` ([Concepts](docs/concepts.md#publications-and-replication-slots)). It takes a snapshot of the existing rows, then streams each new change to `ecommerce.cdc.<table>`, in Avro ([Concepts](docs/concepts.md#debezium-change-events)).
+[`source.json`](ecommerce/cdc/source.json) tells Debezium to read the six tables through the publication `cdc_pub` and its own replication slot, `ecommerce_cdc` ([Concepts](docs/concepts.md#publications-and-replication-slots)). It takes a snapshot of the existing rows, then streams each new change to `ecommerce.cdc.<table>`, in Avro ([Concepts](docs/concepts.md#debezium-change-events)).
 
-`s3-sink.json` tells the S3 sink to read every `ecommerce.cdc.*` topic, decode each message with its schema, and write JSON lines files to `odctl-dev/ecommerce-cdc/<topic>/` ([Concepts](docs/concepts.md#s3-sink)).
+[`s3-sink.json`](ecommerce/cdc/s3-sink.json) tells the S3 sink to read every `ecommerce.cdc.*` topic, decode each message with its schema, and write JSON lines files to `odctl-dev/ecommerce-cdc/<topic>/` ([Concepts](docs/concepts.md#s3-sink)).
 
 Check that each connector and its task show `RUNNING`:
 
@@ -147,7 +166,45 @@ Open `ecommerce.cdc.orders`, then **Messages**, and set both the key and value *
 
 ![Kafka UI showing the newest ecommerce.cdc.orders messages, decoded with their Avro schemas](images/kafka-ui-orders-messages.png)
 
-Each message is one change, and its `op` field says which kind: `r` for a snapshot read, `c` for a create, `u` for an update. Open a few messages with the same key. They are the steps of one order: a create as `Processing`, then updates to `Shipped` and `Delivered`, each with the time of its step in `after`. `before` is null in every update. [Concepts](docs/concepts.md#debezium-change-events) explains why, and [Data](docs/data.md#change-events) shows a full event.
+Each message is one change, and its `op` field says which kind: `r` for a snapshot read, `c` for a create, `u` for an update. Open a few messages with the same key. They are the steps of one order: a create as `Processing`, then updates to `Shipped` and `Delivered`, each with the time of its step in `after`. `before` is null in every update. [Concepts](docs/concepts.md#debezium-change-events) explains why, and [Data](docs/data.md#change-events) describes the event's fields.
+
+<details><summary>An order moving from <code>Processing</code> to <code>Shipped</code>, decoded with its schema</summary>
+
+```json
+{
+  "before": null,
+  "after": {
+    "id": "23b2d4a9-360d-4973-a6da-fd1cc394ca10",
+    "user_id": "862dd089-c746-4127-89d7-db4fcab59a2e",
+    "status": "Shipped",
+    "num_of_items": 1,
+    "created_at": "2026-09-30T13:38:56+00:00",
+    "updated_at": "2026-09-30T13:39:01+00:00",
+    "shipped_at": "2026-09-30T13:39:01+00:00",
+    "delivered_at": null,
+    "cancelled_at": null,
+    "returned_at": null
+  },
+  "source": {
+    "version": "3.5.1.Final",
+    "connector": "postgresql",
+    "name": "ecommerce",
+    "ts_ms": 1790775541329,
+    "snapshot": "false",
+    "db": "odctl",
+    "schema": "cdc",
+    "table": "orders",
+    "txId": 45922,
+    "lsn": 161004832
+  },
+  "op": "u",
+  "ts_ms": 1790775541830
+}
+```
+
+</details>
+
+Some `source` and time fields are left out. `ts_ms` minus `source.ts_ms` shows Debezium sent the change about half a second after PostgreSQL made it.
 
 ### Files
 
@@ -155,7 +212,13 @@ In the SeaweedFS file browser, open `buckets/odctl-dev/ecommerce-cdc/`. There is
 
 ![SeaweedFS file browser listing the JSON lines files the sink wrote for the orders topic](images/seaweedfs-files.png)
 
-Each line is one change event, with its key, offset and time. [Data](docs/data.md#change-events) shows one.
+Each line is one change event, with its key, offset and time. The first line of the first `orders` file is the create event of the same order as above:
+
+```json
+{"offset":0,"value":{"before":null,"after":{...},"source":{...},"op":"c",...},"key":{"id":"23b2d4a9-360d-4973-a6da-fd1cc394ca10"},"timestamp":"..."}
+```
+
+Debezium creates `ecommerce.cdc.orders` only when the first order is placed, after the sink has started. In a test run with the consumer's default metadata refresh of five minutes, the first `orders` file took about six minutes. With [`s3-sink.json`](ecommerce/cdc/s3-sink.json) setting it to 30 seconds, it took about a minute ([Concepts](docs/concepts.md#s3-sink)).
 
 ## Step 4: Change the simulation while it runs
 
@@ -181,6 +244,8 @@ Three pickers pack about 36 orders a minute, twice as many as are placed. One pi
 | 12:51 | 1 | 16 | 9 | 4 |
 | 12:52 | 1 | 17 | 12 | 10 |
 | 12:53 | 1 | 13 | 10 | 8 |
+
+![Kafka UI showing the ecommerce.cdc.orders messages filtered on Cancelled, with one update decoded to the status Cancelled](images/kafka-ui-orders-cancelled.png)
 
 Send `3` to set it back. Other parameters work the same way, such as `ecommerce.arrival.visitor.rate`. `python -m ecommerce.simulation.control --help` lists them all. A change lasts until the simulation stops.
 

@@ -50,13 +50,13 @@ A **backfill** creates feature data from history, for a new system or to fill a 
 
 ## Data validation on write
 
-Validate data before it is written, because one bad row can break a training or inference run later. Here every row is built from a pydantic model with bounds such as PM2.5 between 0 and 500 (`airq/core/models.py`), so a pipeline stops before writing an impossible value.
+Validate data before it is written, because one bad row can break a training or inference run later. Here every row is built from a pydantic model with bounds such as PM2.5 between 0 and 500 ([`models.py`](../airq/core/models.py)), so a pipeline stops before writing an impossible value.
 
 ## Point-in-time correct training data
 
 A model should learn only from what was known at the time. To learn the PM2.5 of a day, it sees the weather forecast made the day before, never anything that came later. Using later information is called **leakage**: it makes a model look better in testing than it will be in real use.
 
-Each forecast row records the day it was made, so Feast always picks the right one. If that forecast is missing, Feast returns nothing rather than an older one (`tests/stores/test_point_in_time.py` checks this).
+Each forecast row records the day it was made, so Feast always picks the right one. If that forecast is missing, Feast returns nothing rather than an older one ([`test_point_in_time.py`](../tests/stores/test_point_in_time.py) checks this).
 
 ## No skew between training and inference
 
@@ -72,7 +72,7 @@ Who does what:
 |---|---|
 | Iceberg | creates a snapshot on every write, and keeps tags: names that point at one snapshot each |
 | Feast | reads the training data from the current snapshot of `daily_weather` and `daily_air_quality`. It does not record which snapshot that was |
-| Training pipeline (`airq/training/train.py`) | reads the current snapshot id of both tables before and after Feast reads them, and stops if either changed. It then tags both snapshots `mlflow-<run id>` |
+| Training pipeline ([`train.py`](../airq/training/train.py)) | reads the current snapshot id of both tables before and after Feast reads them, and stops if either changed. It then tags both snapshots `mlflow-<run id>` |
 | MLflow | stores each snapshot id and tag name on the training run, so a model's training data can be found from its run |
 
 Iceberg's maintenance jobs (compaction, snapshot expiry and orphan file removal) never delete a snapshot that a tag points to, or the files it uses. So a run's training data can be read again for as long as its tag exists. Two side effects remain. The tagged files take up space until the tag is removed. And a compaction that commits while training is reading changes the snapshot id, so training stops and has to be run again. This project runs none of these jobs.

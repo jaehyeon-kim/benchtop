@@ -228,6 +228,7 @@ def train(name: str) -> str:
         )
         mlflow.log_metrics(metrics)
         figure = plot_importance(model).figure
+        figure.tight_layout()
         mlflow.log_figure(figure, "feature_importance.png")
         plt.close(figure)
         info = mlflow.xgboost.log_model(

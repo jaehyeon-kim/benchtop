@@ -1,4 +1,4 @@
-# product-recommender
+# Online Product Recommender
 
 An online product recommender that learns from every click as it happens. It starts as a prototype in one Python process, then becomes an event-driven system: Python recommends, Kafka carries each click, a Flink job trains the models, and Valkey holds them. Everything runs on your own machine.
 
@@ -109,7 +109,7 @@ LinTS           0.640798      0.211538     0.008527  0.042636
 ClustersTS      0.550505      0.153846     0.004651  0.023256
 ```
 
-A visit is scored only when its logged product is among the policy's five. `CTR(score)@5` is the click rate on those visits: LinUCB's 20.5% is double Random's 10.2%, and its ranking score, `AUC(score)@5`, is close to the best, so LinUCB is chosen. [Concepts](docs/concepts.md#offline-policy-evaluation) explains each column and policy.
+A visit is scored only when its logged product is among the policy's five. `CTR(score)@5` is the click rate on those visits: LinUCB's 20.5% is double Random's 10.2%, and its ranking score, `AUC(score)@5`, is close to the best. LinGreedy separates clicks best (AUC 0.89), but its picks are clicked little more often than Random's (CTR 11.8% against 10.2%), because without a bonus it stays with the products it learned first. LinTS has a slightly higher CTR than LinUCB, but ranks poorly (AUC 0.64). LinUCB is the one policy high on both, so it is chosen. [Concepts](docs/concepts.md#offline-policy-evaluation) explains each column and policy.
 
 ### Run LinUCB locally
 
@@ -144,6 +144,32 @@ Step 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serv
 odctl up kafka-lite flink-full valkey        # Kafka, Flink with 3 TaskManagers, and Valkey
 ```
 
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: catalog, flink-full, kafka-lite, postgres, storage, valkey
+
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container           ┃ Service       ┃ State   ┃ Health  ┃ Ports                                                   ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ connect             │ connect       │ running │ -       │ 8083 ➡️  8083/tcp                                       │
+│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 ➡️  8081/tcp                                       │
+│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 ➡️  8083/tcp                                       │
+│ flink-taskmanager-a │ taskmanager-a │ running │ -       │ -                                                       │
+│ flink-taskmanager-b │ taskmanager-b │ running │ -       │ -                                                       │
+│ flink-taskmanager-c │ taskmanager-c │ running │ -       │ -                                                       │
+│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 ➡️  8181/tcp                                       │
+│ kafka               │ kafka         │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
+│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 ➡️  8080/tcp                                       │
+│ karapace            │ karapace      │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ odctl-init-deps     │ init-deps     │ exited  │ -       │ -                                                       │
+│ postgres            │ postgres      │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
+│ seaweed             │ seaweed       │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ seaweed-init        │ seaweed-init  │ exited  │ -       │ -                                                       │
+│ valkey              │ valkey        │ running │ healthy │ 6379 ➡️  6379/tcp                                       │
+└─────────────────────┴───────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
+```
+
 `./gradlew` downloads Gradle and the dependencies the first time, which takes a few minutes. `flink-full` also starts SeaweedFS, which the job reads the history from.
 
 The web UIs:
@@ -160,13 +186,17 @@ Step 2 needs the history from `python -m recommender.run.prepare`.
 ./submit-job.sh
 ```
 
-It does three things:
+[`submit-job.sh`](submit-job.sh) does three things:
 
 1. Uploads `data/training_log.csv` to SeaweedFS. The JobManager and the three TaskManagers are separate containers that all read the file, so it has to be somewhere they can all reach.
 2. Copies the JAR into the JobManager container.
 3. Submits the job with `flink run -d`, which returns once the job is running.
 
+![SeaweedFS file browser showing training_log.csv in the recsys folder of the odctl-dev bucket](images/seaweedfs-recsys-training-log.png)
+
 In the Flink UI, the job `RecommenderParameterUpdate` shows as running. It reads the 10,000 visits of the history first, then waits for feedback events. [Concepts](docs/concepts.md#flink-job) explains what it keeps and when it writes.
+
+![Flink UI showing the job RecommenderParameterUpdate running, with its source and the LinUCB updater having read the 10,000 visits of the history](images/flink-ui-recommender-job.png)
 
 To list the models it has written:
 
@@ -189,6 +219,8 @@ docker logs flink-taskmanager-a -f
 ```
 
 A line such as `Updated model for Product 192 in batch` appears each time the job writes a product's model to Valkey. The feedback events are in Kafka UI, under the topic `feedback-events`. [Concepts](docs/concepts.md#valkey-as-the-model-store) explains why the client reads every model on every visit.
+
+![Kafka UI showing the newest messages in feedback-events, with one feedback event decoded: its product, reward and context vector](images/kafka-ui-feedback-events.png)
 
 ## Tests
 

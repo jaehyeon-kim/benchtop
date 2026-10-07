@@ -6,7 +6,7 @@ The ideas behind [game-leaderboard](../README.md), in the order a score meets th
 
 A **discrete-event simulation** models a system as events at points in time, such as "a player arrives", and moves the clock from one event to the next. Each actor is a **process** that waits for an event, then carries on.
 
-The model is in `leaderboard/simulation/run.py`, built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and the teams in `game.py`. It runs in real time (`factor=1.0`): a simulated second takes a real second.
+The model is in [`run.py`](../leaderboard/simulation/run.py), built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and the teams in [`game.py`](../leaderboard/simulation/game.py). It runs in real time (`factor=1.0`): a simulated second takes a real second.
 
 | Part of the game | dynamic-des part | Default |
 |---|---|---|
@@ -22,7 +22,7 @@ An **arrival** draws the time until the next arrival, and a **service** draws ho
 
 A session joins a team with room, or forms a new one: a team holds up to 15 players, and one arrival in ten forms a new team anyway. The player plays rounds, each scoring 0 to 20, until the session ends, then leaves the team. An empty team dissolves.
 
-Every parameter is kept in dynamic-des's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. `leaderboard.simulation.control` sends a new value to `game-control`, and the ingress writes it into the registry.
+Every parameter is kept in dynamic-des's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. [`leaderboard.simulation.control`](../leaderboard/simulation/control.py) sends a new value to `game-control`, and the ingress writes it into the registry.
 
 ## Event time and processing time
 
@@ -33,7 +33,7 @@ They differ when an event is delayed, as the late scores are. The hot streaks me
 
 ## Watermarks and late events
 
-Events arrive out of order, so a processor working in event time cannot know when it has seen everything up to a point. A **watermark** is a marker in the stream that says event time has reached `t`, and no more events at or before `t` are expected. `00-ddl.sql` declares it on the source table:
+Events arrive out of order, so a processor working in event time cannot know when it has seen everything up to a point. A **watermark** is a marker in the stream that says event time has reached `t`, and no more events at or before `t` are expected. [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) declares it on the source table:
 
 ```sql
 event_time AS TO_TIMESTAMP_LTZ(event_time_millis, 3),
@@ -44,7 +44,7 @@ The watermark stays 5 seconds behind the latest event time seen, so an event may
 
 ## Continuous queries and dynamic tables
 
-A stream never ends, so Flink treats it as a **dynamic table**, one that changes as rows arrive. A query over it is a **continuous query**: it never finishes, and Flink keeps its result up to date. Each job is one. `02-top-players.sql` reads as ordinary SQL: it totals each player's scores, ranks the totals and keeps the top 10. The difference is that every new score can change its result.
+A stream never ends, so Flink treats it as a **dynamic table**, one that changes as rows arrive. A query over it is a **continuous query**: it never finishes, and Flink keeps its result up to date. Each job is one. [`02-top-players.sql`](../leaderboard/jobs/02-top-players.sql) reads as ordinary SQL: it totals each player's scores, ranks the totals and keeps the top 10. The difference is that every new score can change its result.
 
 ## Top-N with ROW_NUMBER
 
@@ -101,14 +101,14 @@ AVG(CAST(score AS DOUBLE)) OVER (
 ) AS short_term_avg
 ```
 
-This averages the player's scores over the 10 seconds up to each score. `RANGE` measures the window in values of the `ORDER BY` column, here seconds, rather than in rows. A second window does the same over 60 seconds, and `03-hot-streaks.sql` keeps each player's latest row, divides the two averages and ranks the result. Because it is ordered by event time:
+This averages the player's scores over the 10 seconds up to each score. `RANGE` measures the window in values of the `ORDER BY` column, here seconds, rather than in rows. A second window does the same over 60 seconds, and [`03-hot-streaks.sql`](../leaderboard/jobs/03-hot-streaks.sql) keeps each player's latest row, divides the two averages and ranks the result. Because it is ordered by event time:
 
 - **Results lag by about 5 seconds.** Flink holds each row until the watermark passes its time, then computes it.
 - **Late scores are left out.** A score whose time is not after the player's last computed row is dropped, and counted in the job's `numLateRecordsDropped` metric.
 
 ## Joining two aggregates
 
-`04-team-mvps.sql` computes each player's total and each team's total as two aggregates, and joins them on `team_id` to get the share. This is a **regular join**: Flink keeps both sides in state, and a change on either side updates every joined row that uses it.
+[`04-team-mvps.sql`](../leaderboard/jobs/04-team-mvps.sql) computes each player's total and each team's total as two aggregates, and joins them on `team_id` to get the share. This is a **regular join**: Flink keeps both sides in state, and a change on either side updates every joined row that uses it.
 
 Each score changes both totals, and the changes arrive one after the other. In between, a player's new total can meet the team's old one, and the share goes above 1. One run briefly held a player total of 420 against a team total of 416. A later change on the team side corrects it.
 
@@ -120,7 +120,7 @@ A team's top scorer has a share of at least 1 divided by the team's size: 1.0 fo
 
 One job with four `INSERT`s would share one set of settings. As four jobs, each has its own settings and its own `pipeline.name`, and can be cancelled alone.
 
-All four use the tables in `00-ddl.sql`. Flink's default catalog keeps table definitions in memory for one SQL client session only, so `leaderboard.jobs.submit` runs each job in its own session with `00-ddl.sql` as the **init file**:
+All four use the tables in [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql). Flink's default catalog keeps table definitions in memory for one SQL client session only, so [`leaderboard.jobs.submit`](../leaderboard/jobs/submit.py) runs each job in its own session with [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) as the **init file**:
 
 ```bash
 ./bin/sql-client.sh -i /tmp/game-sql/00-ddl.sql -f /tmp/game-sql/02-top-players.sql

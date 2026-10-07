@@ -29,7 +29,7 @@ Kafka stores bytes, so a producer needs a **serializer** to turn a record into b
 
 The schemas of one topic's values are stored under a **subject**, by default the topic name plus `-value`. The Confluent serializer registers a schema on first use, and the registry gives it a version number. Before accepting a new version, the registry checks it against the subject's **compatibility** level. Here it is `BACKWARD`, the default: a consumer using the new schema must be able to read data written with the previous one.
 
-Example: the Avro producer's first send registers `Order.avsc` as version 1 of `orders-avro-value`. The Flink jobs later read that version back from the registry to decode the topic.
+Example: the Avro producer's first send registers [`Order.avsc`](../orders-avro-clients/src/main/avro/Order.avsc) as version 1 of `orders-avro-value`. The Flink jobs later read that version back from the registry to decode the topic.
 
 ## Kafka Streams
 
@@ -41,7 +41,7 @@ Kafka Streams is a library, not a separate service: the stream processing runs i
 - **Results.** A windowed aggregation updates its result as records arrive, and sends each update downstream. A record cache merges updates to the same key, and is flushed when the application commits (every 30 seconds by default) or when the cache is full. `suppress(untilWindowCloses(...))` would instead send one final result per window.
 - **Repartitioning.** Grouping after a key change, such as a `map` to a new key, makes Kafka Streams write the records to an internal topic keyed by the new key, so that all records with one key reach the same task.
 
-Example: `BidTimeTimestampExtractor` uses the bid time. The topology maps each order to the key `supplier`, groups it into 5-second windows with a 5-second grace period, and writes each window's updates to `orders-avro-stats`. It does not use `suppress`, so a window's result can appear more than once, each time with a larger count. Because the aggregation drops late records silently, `LateRecordProcessor` repeats the same check first, and sends late orders to `orders-avro-skipped` instead.
+Example: [`BidTimeTimestampExtractor`](../orders-stats-streams/src/main/kotlin/me/jaehyeon/streams/extractor/BidTimeTimestampExtractor.kt) uses the bid time. The topology maps each order to the key `supplier`, groups it into 5-second windows with a 5-second grace period, and writes each window's updates to `orders-avro-stats`. It does not use `suppress`, so a window's result can appear more than once, each time with a larger count. Because the aggregation drops late records silently, [`LateRecordProcessor`](../orders-stats-streams/src/main/kotlin/me/jaehyeon/streams/processor/LateRecordProcessor.kt) repeats the same check first, and sends late orders to `orders-avro-skipped` instead.
 
 ## Flink: watermarks and windows
 
@@ -60,7 +60,7 @@ The **DataStream API** builds a job from operators, such as `map`, `keyBy`, `win
 
 A table made from a DataStream does not carry the stream's event time by default. The table's schema has to name a time column and a watermark. `SOURCE_WATERMARK()` tells the table to use the watermarks the DataStream already has. So the value in that column must be the timestamp the stream's watermarks were built from.
 
-Example: the Table API job puts the bid time into each row as an `Instant`, in the column `bid_time`. It then assigns timestamps and watermarks from that field (`RowWatermarkStrategy`), and declares `bid_time` as `TIMESTAMP_LTZ(3)` with `SOURCE_WATERMARK()`. The query `Tumble.over(lit(5).seconds()).on(col("bid_time"))` then windows on the same time the watermarks follow. The Table API window has no side output, so the job routes late orders with a DataStream step first (`LateDataRouter`): any order older than the watermark minus 5 seconds goes to `orders-avro-ktl-skipped`.
+Example: the Table API job puts the bid time into each row as an `Instant`, in the column `bid_time`. It then assigns timestamps and watermarks from that field ([`RowWatermarkStrategy`](../orders-stats-flink/src/main/kotlin/me/jaehyeon/flink/watermark/RowWatermarkStrategy.kt)), and declares `bid_time` as `TIMESTAMP_LTZ(3)` with `SOURCE_WATERMARK()`. The query `Tumble.over(lit(5).seconds()).on(col("bid_time"))` then windows on the same time the watermarks follow. The Table API window has no side output, so the job routes late orders with a DataStream step first ([`LateDataRouter`](../orders-stats-flink/src/main/kotlin/me/jaehyeon/flink/processing/LateDataRouter.kt)): any order older than the watermark minus 5 seconds goes to `orders-avro-ktl-skipped`.
 
 ## Why DELAY_SECONDS makes orders late
 

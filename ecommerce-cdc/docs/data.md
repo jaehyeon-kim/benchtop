@@ -1,10 +1,10 @@
 # Data
 
-The tables the [ecommerce-cdc](../README.md) simulation writes, the topics Debezium makes from them, and a change event.
+The tables the [ecommerce-cdc](../README.md) simulation writes, the topics Debezium makes from them, and the shape of a change event.
 
 ## Tables
 
-The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. dynamic-des sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. The models and their bounds are in `ecommerce/core/models.py`.
+The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. dynamic-des sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. The models and their bounds are in [`models.py`](../ecommerce/core/models.py).
 
 | Table | Rows | Columns |
 |---|---|---|
@@ -23,42 +23,6 @@ Debezium writes one topic per table, `ecommerce.cdc.<table>`, each with 3 partit
 
 ## Change events
 
-An order moving from `Processing` to `Shipped`, decoded with its schema:
+Each message's key holds the row's `id`. Each value is one Debezium change event with five fields: `before`, `after`, `source`, `op` and `ts_ms`. [Concepts](concepts.md#debezium-change-events) explains each field. `after` holds the whole row, with the table's columns above, and `before` is null in every update.
 
-```json
-{
-  "before": null,
-  "after": {
-    "id": "23b2d4a9-360d-4973-a6da-fd1cc394ca10",
-    "user_id": "862dd089-c746-4127-89d7-db4fcab59a2e",
-    "status": "Shipped",
-    "num_of_items": 1,
-    "created_at": "2026-09-30T13:38:56+00:00",
-    "updated_at": "2026-09-30T13:39:01+00:00",
-    "shipped_at": "2026-09-30T13:39:01+00:00",
-    "delivered_at": null,
-    "cancelled_at": null,
-    "returned_at": null
-  },
-  "source": {
-    "version": "3.5.1.Final",
-    "connector": "postgresql",
-    "name": "ecommerce",
-    "ts_ms": 1790775541329,
-    "snapshot": "false",
-    "db": "odctl",
-    "schema": "cdc",
-    "table": "orders",
-    "txId": 45922,
-    "lsn": 161004832
-  },
-  "op": "u",
-  "ts_ms": 1790775541830
-}
-```
-
-Some `source` and time fields are left out. `ts_ms` minus `source.ts_ms` shows Debezium sent the change about half a second after PostgreSQL made it. In SeaweedFS, the S3 sink writes each event as one line, wrapped with its key, offset and timestamp. The first line of the first `orders` file is the same order's create event:
-
-```json
-{"offset":0,"value":{"before":null,"after":{...},"source":{...},"op":"c",...},"key":{"id":"23b2d4a9-360d-4973-a6da-fd1cc394ca10"},"timestamp":"..."}
-```
+The S3 sink writes each event as one line of a JSON lines file in SeaweedFS. Each line is a JSON object with four fields: `key`, `value` (the change event), `offset` and `timestamp`.

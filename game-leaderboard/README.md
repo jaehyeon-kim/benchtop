@@ -1,4 +1,4 @@
-# game-leaderboard
+# Live Game Leaderboards with Flink SQL
 
 Live leaderboards for a simulated mobile game. A simulation plays the game and sends every score to Kafka. Four Flink SQL jobs keep four top 10 leaderboards up to date in PostgreSQL, and a web dashboard shows them as they change. Everything runs on your own machine, and no step calls an external service.
 
@@ -7,7 +7,7 @@ It is described in a post: [Keeping Game Leaderboards Up to Date in Real Time wi
 More detail is in two documents:
 
 - [Concepts](docs/concepts.md): the ideas the project is built on, from event time to Top-N queries, and where the code uses them.
-- [Data](docs/data.md): the score event, the four leaderboard tables, and queries to look at them.
+- [Data](docs/data.md): the score event and the four leaderboard tables.
 
 ## Architecture
 
@@ -70,6 +70,29 @@ uv pip install -r requirements.txt
 odctl up kafka-lite flink-lite postgres
 ```
 
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: catalog, flink-lite, kafka-lite, postgres, storage
+
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container           ┃ Service       ┃ State   ┃ Health  ┃ Ports                                                   ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ connect             │ connect       │ running │ -       │ 8083 ➡️  8083/tcp                                       │
+│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 ➡️  8081/tcp                                       │
+│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 ➡️  8083/tcp                                       │
+│ flink-taskmanager-a │ taskmanager-a │ running │ -       │ -                                                       │
+│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 ➡️  8181/tcp                                       │
+│ kafka               │ kafka         │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
+│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 ➡️  8080/tcp                                       │
+│ karapace            │ karapace      │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ odctl-init-deps     │ init-deps     │ exited  │ -       │ -                                                       │
+│ postgres            │ postgres      │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
+│ seaweed             │ seaweed       │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ seaweed-init        │ seaweed-init  │ exited  │ -       │ -                                                       │
+└─────────────────────┴───────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
+```
+
 `kafka-lite` starts one Kafka broker, Karapace and Kafka UI. `flink-lite` starts a Flink cluster with one TaskManager, the worker process that runs jobs. It has 5 task slots, and each job here runs in one slot, so there is room for the four jobs. `postgres` starts PostgreSQL.
 
 The web UIs:
@@ -110,15 +133,17 @@ python -m leaderboard.jobs.submit
 
 It does three things:
 
-1. **Creates the tables.** It creates the PostgreSQL schema `game`, with the four leaderboard tables in `leaderboard/jobs/tables.sql`.
+1. **Creates the tables.** It creates the PostgreSQL schema `game`, with the four leaderboard tables in [`tables.sql`](leaderboard/jobs/tables.sql).
 2. **Adds a library to Flink.** It copies the OpenLineage client library into Flink's `lib` folder. Flink's JDBC connector, which writes to PostgreSQL, needs it, and odctl's Flink image has a copy, but not in that folder.
-3. **Submits four jobs**, one per job file in `leaderboard/jobs/`, from `01-top-teams.sql` to `04-team-mvps.sql`. Each runs with the shared table definitions in `00-ddl.sql`. [Concepts](docs/concepts.md#four-jobs-and-one-init-file) explains why there are four jobs rather than one, and why the table definitions are loaded with each.
+3. **Submits four jobs**, one per job file in [`leaderboard/jobs/`](leaderboard/jobs/), from [`01-top-teams.sql`](leaderboard/jobs/01-top-teams.sql) to [`04-team-mvps.sql`](leaderboard/jobs/04-team-mvps.sql). Each runs with the shared table definitions in [`00-ddl.sql`](leaderboard/jobs/00-ddl.sql). [Concepts](docs/concepts.md#four-jobs-and-one-init-file) explains why there are four jobs rather than one, and why the table definitions are loaded with each.
 
 In the Flink UI, **Jobs** then **Running Jobs** lists the four jobs, all `RUNNING`:
 
 ![Flink UI listing the four leaderboard jobs, all running](images/flink-ui-jobs.png)
 
 Each job reads the topic from its first message, so the leaderboards include every score sent so far. Open a job to see its plan: a Kafka source, the aggregation and ranking, then a JDBC sink. [Concepts](docs/concepts.md#job-settings-state-mini-batch-and-checkpoints) explains the settings each job file sets.
+
+![Flink UI showing the plan of the game-top-teams job: the Kafka source scores, the group aggregation, then the ranking and the JDBC sink top_teams](images/flink-ui-top-teams-plan.png)
 
 Each leaderboard table holds 10 rows, one per rank. To see one in PostgreSQL:
 
@@ -158,6 +183,14 @@ Players who are already playing keep their type until their sessions end, within
 - **Top teams** changes as the robots' teams climb, because their totals grow faster.
 - **Team MVPs** fills with robots, because a robot earns a large share of any team it joins.
 - **Hot streaks** stays with people. A streak divides a player's average over the last 10 seconds by their average over the last minute. A robot plays 6 or 7 rounds in 10 seconds, so its short average stays close to its long one, and its ratio stays near 1. A person plays one or two rounds in 10 seconds, so one high score can double the short average.
+
+![Dashboard after the change, with robots (RBT-...) filling the top players and the team MVPs, and only people (USR-...) in the hot streaks](images/dashboard-robots.png)
+
+To count the robots in the top players and the hot streaks in PostgreSQL:
+
+```bash
+docker exec postgres psql -U user -d odctl -c "SELECT 'top_players' AS board, count(*) FILTER (WHERE user_id LIKE 'RBT%') AS robots FROM game.top_players UNION ALL SELECT 'hot_streaks', count(*) FILTER (WHERE user_id LIKE 'RBT%') FROM game.hot_streaks"
+```
 
 Set it back when you have seen enough:
 

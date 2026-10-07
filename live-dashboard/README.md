@@ -1,4 +1,4 @@
-# live-dashboard
+# Live Sales Dashboards
 
 Two live dashboards of a simulated online shop, one built with Streamlit and one with Next.js. A simulation writes the shop's users, orders and order items to PostgreSQL as they happen. A WebSocket server sends the order items of the last five minutes to every open dashboard, every five seconds. Everything runs on your own machine, and no step calls an external service.
 
@@ -9,9 +9,7 @@ More detail is in two documents:
 
 ## Architecture
 
-![The Streamlit dashboard reads the recent order items from the WebSocket server, which reads them from PostgreSQL](images/part-2.png)
-
-![The Next.js dashboard reads the recent order items from the WebSocket server, which reads them from PostgreSQL](images/part-3.png)
+![The Streamlit and Next.js dashboards both read the recent order items from the WebSocket server, which reads them from PostgreSQL](images/architecture.png)
 
 Three parts do the work:
 
@@ -76,6 +74,19 @@ uv pip install -r requirements.txt
 odctl up postgres                   # start PostgreSQL
 ```
 
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: postgres
+
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃ Container       ┃ Service   ┃ State   ┃ Health  ┃ Ports             ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ odctl-init-deps │ init-deps │ exited  │ -       │ -                 │
+│ postgres        │ postgres  │ running │ healthy │ 5432 ➡️  5432/tcp │
+└─────────────────┴───────────┴─────────┴─────────┴───────────────────┘
+```
+
 The code connects to PostgreSQL at `127.0.0.1:5432`. [`sales/core/config.py`](./sales/core/config.py) sets the address and every other setting, so there is nothing to configure.
 
 ## Step 1: data producer
@@ -109,6 +120,12 @@ docker exec postgres psql -U user -d odctl -c "select status, count(*) from dash
 ```
 
 Run it again after a minute. `Processing` orders are waiting for, or with, a picker. `Shipped` orders are on their way, and `Complete` orders have arrived.
+
+Revenue by country over the last five minutes, the same numbers as the dashboards' revenue by country chart in [Step 3](#step-3-streamlit-dashboard):
+
+```bash
+docker exec postgres psql -U user -d odctl -c "select u.country, round(sum(o.sale_price)) from dashboard.order_items o join dashboard.users u on u.id = o.user_id where o.created_at::timestamptz >= clock_timestamp() - interval '5 minutes' group by 1 order by 2 desc"
+```
 
 ## Step 2: WebSocket server
 
@@ -144,7 +161,7 @@ Open http://127.0.0.1:8501 and tick **Connect to WS Server**. Every five seconds
 - The small figure under each number is its change since the last message.
 - The charts add up the sale prices by the user's country and by how the user found the shop.
 
-The page is `sales/dashboard/streamlit_app.py`, and the calculations are in `sales/dashboard/metrics.py`. [Concepts](docs/concepts.md#streamlits-rerun-model) explains how the page stays on screen while it waits for messages. Untick the box to stop the feed.
+The page is [`streamlit_app.py`](sales/dashboard/streamlit_app.py), and the calculations are in [`metrics.py`](sales/dashboard/metrics.py). [Concepts](docs/concepts.md#streamlits-rerun-model) explains how the page stays on screen while it waits for messages. Untick the box to stop the feed.
 
 ## Step 4: Next.js dashboard
 
@@ -160,7 +177,7 @@ Open http://127.0.0.1:3000 and tick **Connect to WS Server**:
 
 ![Next.js dashboard with order, item and sales cards above revenue by country and by traffic source](images/nextjs-dashboard.png)
 
-It shows the same numbers and charts as Streamlit, with an arrow on each card for the direction of the change. The page is `nextjs/src/app/page.tsx`. It follows the WebSocket through the hook in `nextjs/src/lib/useDashboard.ts`, and `nextjs/src/lib/processing.ts` does the same calculations as `metrics.py`. [Concepts](docs/concepts.md#react-state-and-effects) explains the hook and why the page is a client component.
+It shows the same numbers and charts as Streamlit, with an arrow on each card for the direction of the change. The page is [`page.tsx`](nextjs/src/app/page.tsx). It follows the WebSocket through the hook in [`useDashboard.ts`](nextjs/src/lib/useDashboard.ts), and [`processing.ts`](nextjs/src/lib/processing.ts) does the same calculations as [`metrics.py`](sales/dashboard/metrics.py). [Concepts](docs/concepts.md#react-state-and-effects) explains the hook and why the page is a client component.
 
 Open both dashboards side by side. Each has its own WebSocket connection, and both receive the same records every five seconds.
 

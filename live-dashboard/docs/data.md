@@ -1,6 +1,6 @@
 # Data
 
-The tables the [live-dashboard](../README.md) simulation writes, and the records the WebSocket server sends. The tables are in the `dashboard` schema of odctl's PostgreSQL database `odctl`, created by `sales/stores/postgres.py`.
+The tables the [live-dashboard](../README.md) simulation writes, and the records the WebSocket server sends. The tables are in the `dashboard` schema of odctl's PostgreSQL database `odctl`, created by [`postgres.py`](../sales/stores/postgres.py).
 
 Times are ISO 8601 text in UTC, because dynamic-des publishes rows as JSON-friendly values. A query casts them with `created_at::timestamptz` before comparing.
 
@@ -45,11 +45,3 @@ Each message is one JSON list, with a record for each order item of the last fiv
 | `item_status`, `created_at` | `order_items` | not shown |
 
 The dashboards count every record whatever its status, so a cancelled order still counts.
-
-## Example query
-
-Revenue by country over the last five minutes, the same numbers as the dashboard's chart:
-
-```bash
-docker exec postgres psql -U user -d odctl -c "select u.country, round(sum(o.sale_price)) from dashboard.order_items o join dashboard.users u on u.id = o.user_id where o.created_at::timestamptz >= clock_timestamp() - interval '5 minutes' group by 1 order by 2 desc"
-```

@@ -4,7 +4,7 @@ Every file, topic and key the [product-recommender](../README.md) steps read and
 
 ## Input files
 
-`products.csv`: the 200 products, in 8 categories such as `Pizzas` and `Drinks & Desserts`.
+[`products.csv`](../data/products.csv): the 200 products, in 8 categories such as `Pizzas` and `Drinks & Desserts`.
 
 | Column | Description |
 |---|---|
@@ -13,7 +13,7 @@ Every file, topic and key the [product-recommender](../README.md) steps read and
 | `price` | in dollars, from 3.00 to 38.99 |
 | `category` | one of the 8 categories |
 
-`world_pop.csv`: postal areas with their location and population. Users are placed in Melbourne's 159 postal areas, each chosen in proportion to its population.
+[`world_pop.csv`](../data/world_pop.csv): postal areas with their location and population. Users are placed in Melbourne's 159 postal areas, each chosen in proportion to its population.
 
 ## Files that prepare writes
 

@@ -1,4 +1,4 @@
-# order-streams
+# Order Streams with Kafka and Flink
 
 Four Kotlin applications that produce, consume and aggregate one stream of order events on Apache Kafka. They start with the plain Kafka clients, first with JSON and then with Avro. Then they compute the same supplier statistics twice: with Kafka Streams, and with Apache Flink.
 
@@ -57,6 +57,22 @@ Start the services:
 odctl up kafka-lite
 ```
 
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: kafka-lite
+
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container       ┃ Service   ┃ State   ┃ Health  ┃ Ports                                  ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ connect         │ connect   │ running │ -       │ 8083 ➡️  8083/tcp                      │
+│ kafka           │ kafka     │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp │
+│ kafka-ui        │ kafka-ui  │ running │ -       │ 8086 ➡️  8080/tcp                      │
+│ karapace        │ karapace  │ running │ healthy │ 8081 ➡️  8081/tcp                      │
+│ odctl-init-deps │ init-deps │ exited  │ -       │ -                                      │
+└─────────────────┴───────────┴─────────┴─────────┴────────────────────────────────────────┘
+```
+
 `kafka-lite` runs one Kafka broker on `127.0.0.1:9092`, Karapace on `http://127.0.0.1:8081` and Kafka UI on http://127.0.0.1:8086. The applications use those addresses by default, so there is nothing to configure.
 
 Flink needs no service here. The Flink application starts a small Flink cluster inside its own process.
@@ -81,6 +97,8 @@ In Kafka UI:
 - **Topics > orders-json > Messages:** each order as JSON, with its key, partition and offset, spread over the three partitions.
 - **Consumers > orders-json-group:** the group's lag, the number of records it has not read yet. Stop the consumer and the lag grows. Start it again and it carries on from its last committed offset.
 
+![Kafka UI showing the newest orders-json messages as JSON, spread over partitions 0, 1 and 2](images/kafka-ui-orders-json-messages.png)
+
 ## Step 2: Avro clients
 
 ![ProducerApp sends Avro orders to orders-avro and registers the schema in the schema registry, and ConsumerApp reads them](images/avro-clients.png)
@@ -90,13 +108,15 @@ In Kafka UI:
 ./gradlew :orders-avro-clients:run --args="consumer"     # in a second terminal
 ```
 
-The producer creates the topic `orders-avro` and sends one order a second, like the JSON producer, but in Avro. The order is generated from the schema in `orders-avro-clients/src/main/avro/Order.avsc`, which the serializer registers in Karapace under the subject `orders-avro-value` ([serialization](docs/concepts.md#serialization-json-and-avro)).
+The producer creates the topic `orders-avro` and sends one order a second, like the JSON producer, but in Avro. The order is generated from the schema in [`Order.avsc`](orders-avro-clients/src/main/avro/Order.avsc), which the serializer registers in Karapace under the subject `orders-avro-value` ([serialization](docs/concepts.md#serialization-json-and-avro)).
 
 In Kafka UI:
 
 - **Schema Registry > orders-avro-value:** the registered schema, its version and its compatibility level, `BACKWARD`.
 - **Topics > orders-avro > Messages:** set **Value Serde** to `SchemaRegistry`, and Kafka UI decodes each message with the schema.
 - **Consumers > orders-avro-group:** the Avro consumer's group, which works as in step 1.
+
+![Kafka UI showing the orders-avro-value schema in the schema registry, version 1 with BACKWARD compatibility](images/kafka-ui-orders-avro-schema.png)
 
 Keep the producer running for the next three steps: they all read `orders-avro`.
 
@@ -127,10 +147,12 @@ The application creates the topics `orders-avro-stats` and `orders-avro-skipped`
 
 In Kafka UI:
 
-- **Topics > orders-avro-stats:** the window results. Set **Value Serde** to `SchemaRegistry` to decode them with the `SupplierStats` schema. They arrive in bursts, about every 30 seconds, when Kafka Streams commits.
+- **Topics > orders-avro-stats:** the window results. Set **Value Serde** to `SchemaRegistry` to decode them with the `SupplierStats` schema ([`SupplierStats.avsc`](orders-stats-streams/src/main/avro/SupplierStats.avsc)). They arrive in bursts, about every 30 seconds, when Kafka Streams commits.
 - **Topics > orders-avro-skipped:** the late orders, as plain JSON. It stays empty unless the producer runs with `DELAY_SECONDS=15`.
 - **Consumers > orders-avro-stats-kafka-streams:** the application's consumer group, named after its application id.
 - **Topics:** two internal topics starting with `orders-avro-stats-kafka-streams-`: the orders re-keyed by supplier, and the changelog of the window totals.
+
+![Kafka UI showing orders-avro-stats messages, with one window result decoded with the SupplierStats schema](images/kafka-ui-orders-avro-stats.png)
 
 ## Step 4: Flink DataStream API
 
@@ -148,6 +170,8 @@ The job creates the topics `orders-avro-kds-stats` and `orders-avro-kds-skipped`
 4. **Send** late orders to a side output, written as JSON to `orders-avro-kds-skipped`.
 
 The job also prints each result and each late order to the terminal. In Kafka UI, `orders-avro-kds-stats` needs **Value Serde** set to `SchemaRegistry`, and `orders-avro-kds-skipped` holds plain JSON. The skipped topic stays empty unless the producer runs with `DELAY_SECONDS=30`.
+
+![Kafka UI showing orders-avro-kds-stats messages, with one window result decoded with the SupplierStats schema](images/kafka-ui-orders-avro-kds-stats.png)
 
 ## Step 5: Flink Table API
 
@@ -167,12 +191,15 @@ The same statistics, written as a table query ([DataStream API and Table API](do
 
 As in step 4, the job prints its results and late orders to the terminal, and Kafka UI shows both topics. `orders-avro-ktl-skipped` stays empty unless the producer runs with `DELAY_SECONDS=30`.
 
+![Kafka UI showing orders-avro-ktl-stats messages, with one window result decoded with the schema that Flink registered for the topic](images/kafka-ui-orders-avro-ktl-stats.png)
+
 ## Fat JARs
 
 Each application also builds into one JAR that holds all its dependencies, and runs with `java -jar`:
 
 ```bash
 ./gradlew shadowJar
+java -jar orders-json-clients/build/libs/orders-json-clients-1.0.jar producer
 java -jar orders-avro-clients/build/libs/orders-avro-clients-1.0.jar producer
 java -jar orders-stats-streams/build/libs/orders-stats-streams-1.0.jar
 java --add-opens=java.base/java.util=ALL-UNNAMED -jar orders-stats-flink/build/libs/orders-stats-flink-1.0.jar datastream

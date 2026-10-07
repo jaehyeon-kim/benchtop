@@ -1,14 +1,13 @@
-# air-quality
+# Air Quality Forecasting with a Feature Store
 
 An ML system that forecasts daily PM2.5, a measure of fine-particle air pollution, for the next seven days from weather forecasts. Everything runs on your own machine, and no step calls an external service.
 
 The design follows the air quality project in Jim Dowling's [*Building Machine Learning Systems with a Feature Store*](https://www.oreilly.com/library/view/building-machine-learning/9781098165222/).
 
-More detail is in three documents:
+More detail is in two documents:
 
 - [Concepts](docs/concepts.md): the ideas the system is built on, and where the code uses them.
-- [Data](docs/data.md): every table's columns, and example queries.
-- [Results](docs/results.md): how accurate each model is, and why v2 has the features it has.
+- [Data](docs/data.md): every table's columns.
 
 ## Architecture
 
@@ -73,6 +72,7 @@ The baseline is not a trained model. It is the error a model has to beat.
 | XGBoost | the models |
 | MLflow | tracks training runs, and is the model registry |
 | Apache Airflow | runs the pipelines on a schedule |
+| Trino | a SQL query engine to look at the Iceberg tables |
 | NiceGUI, Strands and Ollama | the web app, its chat agent, and the local language model the agent uses |
 | [odctl](https://github.com/jaehyeon-kim/odctl) | starts all the services above with Docker Compose |
 
@@ -100,7 +100,30 @@ odctl init
 printf '\n_AIRFLOW_PIP_DEPS="dynamic-des[iceberg]>=0.15.0 dateparser==1.4.3"\n' >> .odctl/.env
 
 # 3. start the services
-odctl up catalog feast mlflow airflow
+odctl up catalog feast mlflow airflow trino
+```
+
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: airflow, catalog, feast, mlflow, postgres, storage, trino, valkey
+
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container       ┃ Service      ┃ State   ┃ Health  ┃ Ports                                                   ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ airflow         │ airflow      │ running │ healthy │ 8085 ➡️  8080/tcp                                       │
+│ feast-serve     │ feast-serve  │ running │ healthy │ 6566 ➡️  6566/tcp                                       │
+│ feast-ui        │ feast-ui     │ running │ healthy │ 8890 ➡️  8888/tcp                                       │
+│ iceberg-catalog │ catalog      │ running │ -       │ 8181 ➡️  8181/tcp                                       │
+│ mlflow          │ mlflow       │ running │ healthy │ 5004 ➡️  5000/tcp                                       │
+│ mlflow-serve    │ mlflow-serve │ running │ healthy │ 5003 ➡️  5003/tcp                                       │
+│ odctl-init-deps │ init-deps    │ exited  │ -       │ -                                                       │
+│ postgres        │ postgres     │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
+│ seaweed         │ seaweed      │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ seaweed-init    │ seaweed-init │ exited  │ -       │ -                                                       │
+│ trino           │ trino        │ running │ healthy │ 8080 ➡️  8080/tcp                                       │
+│ valkey          │ valkey       │ running │ healthy │ 6379 ➡️  6379/tcp                                       │
+└─────────────────┴──────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
 ```
 
 Run step 2 before the first `odctl up`, because Airflow reads the setting only when its container is created.
@@ -126,7 +149,7 @@ The feature pipeline writes four Iceberg tables in the `airq` namespace:
 - `daily_weather`: the forecast for each day, averaged over its 24 hours. It has one row for each day and lead, where the lead is how many days ahead the forecast was made (1 to 7).
 - `daily_air_quality`: each day's mean PM2.5, which is what the models predict, with the weekend flag and the previous day's mean.
 
-The data is for one simulated station. [Data](docs/data.md) lists every column, and has queries to look at the tables.
+The data is for one simulated station. [Data](docs/data.md) lists every column.
 
 One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. A dynamic-des simulation writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
 
@@ -134,17 +157,121 @@ One command, `python -m airq.feature.load`, does both the backfill and the daily
 python -m airq.feature.load --n-days 730 --seed 42 --reset
 ```
 
-Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in `airq/core/models.py`.
+Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in [`models.py`](airq/core/models.py).
+
+![SeaweedFS file browser showing the folders of the four airq tables under warehouse/airq](images/seaweedfs-warehouse-airq.png)
+
+### Look at the data with Trino
+
+Trino is a SQL query engine. odctl's Trino, started with the other services, reads the same Iceberg catalog. Open its shell with:
+
+```bash
+docker exec -it trino trino --catalog iceberg --schema airq
+```
+
+Without `--catalog` and `--schema`, name tables in full as `iceberg.airq.<table>`, or run `USE iceberg.airq;` first. `SHOW TABLES;` and `DESCRIBE observations;` show what is there. Run `exit` or `quit` to leave the shell.
+
+<details>
+<summary>Example queries on the backfilled tables</summary>
+
+The span of the backfill. The last hour should be 23:00 yesterday (UTC):
+
+```sql
+SELECT count(*) AS rows, min(measured_at) AS first_hour, max(measured_at) AS last_hour
+FROM observations;
+```
+
+The forecast issued at midnight yesterday, one row per lead:
+
+```sql
+SELECT lead_days, forecast_for, temperature_2m, precipitation, wind_speed_10m
+FROM weather_forecasts
+WHERE issued_at = date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '1' DAY
+ORDER BY lead_days;
+```
+
+Seven forecasts for noon yesterday, each issued on a different day:
+
+```sql
+SELECT issued_at, lead_days, temperature_2m, wind_speed_10m
+FROM weather_forecasts
+WHERE forecast_for = date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '1' DAY + INTERVAL '12' HOUR
+ORDER BY issued_at;
+```
+
+Daily mean PM2.5 over the last week:
+
+```sql
+SELECT date_trunc('day', measured_at) AS day, round(avg(pm2_5), 1) AS pm2_5
+FROM observations
+WHERE measured_at >= date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '7' DAY
+GROUP BY 1
+ORDER BY 1;
+```
+
+PM2.5 beside the lead-1 forecast, a preview of the daily features: lower on windy or wet days:
+
+```sql
+SELECT date_trunc('day', o.measured_at) AS day,
+       round(avg(o.pm2_5), 1) AS pm2_5,
+       round(avg(f.wind_speed_10m), 1) AS wind,
+       count_if(f.precipitation > 0) AS wet_hours
+FROM observations o
+JOIN weather_forecasts f ON f.forecast_for = o.measured_at AND f.lead_days = 1
+WHERE o.measured_at >= date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '7' DAY
+GROUP BY 1
+ORDER BY 1;
+```
+
+The weekday effect, which weather cannot explain:
+
+```sql
+SELECT day_of_week(measured_at) >= 6 AS weekend, round(avg(pm2_5), 1) AS pm2_5
+FROM observations
+GROUP BY 1;
+```
+
+Yesterday's daily weather at every lead, each averaged from the forecasts issued on a different day:
+
+```sql
+SELECT lead_days, issued_on, temperature_2m, wind_speed_10m, wet_hours
+FROM daily_weather
+WHERE day = CAST(current_timestamp AT TIME ZONE 'UTC' AS date) - INTERVAL '1' DAY
+ORDER BY lead_days;
+```
+
+The last week of the target, with the weekend flag and the previous day's mean:
+
+```sql
+SELECT day, pm2_5, is_weekend, pm2_5_lag1
+FROM daily_air_quality
+ORDER BY day DESC
+LIMIT 7;
+```
+
+</details>
 
 ### Register v1's features
 
-Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in `airq/stores/feature_store.py`. Register it once, and again after changing it:
+Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in [`feature_store.py`](airq/stores/feature_store.py). Register it once, and again after changing it:
 
 ```bash
 python -m airq.stores.feature_store --version v1
 ```
 
 The Feast UI at http://127.0.0.1:8890 then shows the project `airq` with the `weather_v1` view.
+
+![Feast UI listing the feature views of the project airq: weather_v1, with three features](images/feast-weather-v1.png)
+
+The rows training learns from: each day's PM2.5 beside the lead-1 weather and the weekend flag:
+
+```sql
+SELECT a.day, a.pm2_5, w.temperature_2m, w.wind_speed_10m, w.wet_hours, a.is_weekend
+FROM daily_air_quality a
+JOIN daily_weather w ON w.day = a.day AND w.lead_days = 1
+ORDER BY a.day DESC
+LIMIT 7;
+```
 
 ### Train v1
 
@@ -162,12 +289,27 @@ python -m airq.training.train --version v1
 
 The run is in MLflow at http://127.0.0.1:5004, under the experiment `airq`.
 
+![MLflow showing the registered model airq_pm25, with version 1 tagged feature_set v1 and the alias champion](images/mlflow-model-airq-pm25.png)
+
+![MLflow showing the v1 run's metrics for v1 and the baseline, and its parameters](images/mlflow-v1-run-metrics.png)
+
+![MLflow showing the v1 run's feature importance plot: temperature, then wind speed, then hours of rain](images/mlflow-v1-feature-importance.png)
+
 ### Forecast
 
 Each inference run treats one date as today, called the **as-of date**, and predicts the seven days after it. It reads the forecasts made on that date through Feast, predicts with the champion, and writes the results to the Iceberg table `predictions`. Running a date again replaces its predictions.
 
 ```bash
 python -m airq.inference.infer                                 # as of yesterday: today and the six days after it
+```
+
+The latest forecast, seven days from each model version:
+
+```sql
+SELECT model_version, day, lead_days, pm2_5
+FROM predictions
+WHERE as_of = (SELECT max(as_of) FROM predictions)
+ORDER BY model_version, day;
 ```
 
 ### Load a day and forecast again
@@ -177,9 +319,9 @@ Without `--reset`, the same command adds days to the existing tables: one day, y
 Because the data is simulated, the daily run can also load days that have not happened yet. That lets you move time forward one day at a time:
 
 ```bash
-python -m airq.feature.load --until today             # load today
-python -m airq.inference.infer --as-of today                   # forecast the seven days after it
-python -m airq.feature.load --until tomorrow          # load the next day
+python -m airq.feature.load --until today        # load today
+python -m airq.inference.infer --as-of today     # forecast the seven days after it
+python -m airq.feature.load --until tomorrow     # load the next day
 python -m airq.inference.infer --as-of tomorrow
 ```
 
@@ -191,6 +333,26 @@ The hindcast compares the predictions with the PM2.5 measured since, and reports
 
 ```bash
 python -m airq.inference.infer --hindcast
+```
+
+Every prediction made for the last measured day, from seven days ahead to one, beside the measured value:
+
+```sql
+SELECT p.as_of, p.lead_days, p.model_version, p.pm2_5 AS predicted, a.pm2_5 AS measured
+FROM predictions p
+JOIN daily_air_quality a ON a.day = p.day
+WHERE p.day = (SELECT max(day) FROM daily_air_quality)
+ORDER BY p.model_version, p.lead_days DESC;
+```
+
+Each model version's mean absolute error by lead, over every day that has a measurement. This is what the hindcast reports:
+
+```sql
+SELECT p.model_version, p.lead_days, round(avg(abs(p.pm2_5 - a.pm2_5)), 2) AS mae, count(*) AS days
+FROM predictions p
+JOIN daily_air_quality a ON a.day = p.day
+GROUP BY 1, 2
+ORDER BY 1, 2;
 ```
 
 ## Step 2: v2 pipelines
@@ -205,11 +367,44 @@ The feature sweep tests which daily features to add to the weather. It adds one 
 python -m airq.training.sweep
 ```
 
-It finds that a weekend flag cuts the error by about 60%, because the simulation raises PM2.5 on weekdays. Past PM2.5 readings, from one to seven days back, add nothing. So v2 is the weather plus the weekend flag. The measurements are in [Results](docs/results.md).
+It finds that a weekend flag cuts the error by about 60%, because the simulation raises PM2.5 on weekdays. Past PM2.5 readings, from one to seven days back, add nothing. So v2 is the weather plus the weekend flag.
+
+Every error in this step is the mean absolute error (MAE) in µg/m³. The figures come from one run over 730 days of simulated data with seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. [`test_ordering.py`](tests/training/test_ordering.py) checks that.
+
+The sweep's scores on the same test days as training:
+
+| Features | MAE |
+|---|---|
+| weather | 1.94 |
+| weather and weekend flag | 0.77 |
+| plus yesterday's PM2.5 | 0.75 |
+| plus the two days before | 0.77 |
+| plus the three days before | 0.76 |
+
+The sweep keeps adding features while each one lowers the error by at least 5%. The weekend flag cuts the error by about 60%. Yesterday's PM2.5 then lowers it by less than 3%, so the sweep stops there, and v2 is the weather and the weekend flag.
+
+#### Past PM2.5 readings
+
+A past reading can only be used if it exists when the forecast is made. On day D, the latest reading is D's own. So a forecast for day D+N can use a reading from N days before it at best. The sweep scores each lead with the reading that is actually available:
+
+| Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| without the reading | 0.76 | 0.83 | 0.86 | 0.85 | 0.93 | 0.96 | 0.94 |
+| with the reading | 0.77 | 0.81 | 0.87 | 0.82 | 0.94 | 0.88 | 0.95 |
+
+The reading moves the error by 0.08 at most, up at some leads and down at others, with no consistent gain. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new.
+
+Leaving past readings out also avoids three problems:
+
+- **One model per lead.** Each lead would use a reading from a different day, so each would need its own model.
+- **Sensor outages.** A missing reading would stop the forecast, or need a rule to fill it in.
+- **Timing.** Day D's last reading arrives at 00:00 UTC, when the daily run starts, so a late reading would be missed.
+
+![MLflow showing the feature-sweep run: the MAE of each feature set, and the tag chosen: weather+weekend](images/mlflow-feature-sweep.png)
 
 ### Register v2's features
 
-v2 reads two views, defined in `airq/stores/feature_store.py`:
+v2 reads two views, defined in [`feature_store.py`](airq/stores/feature_store.py):
 
 | View | Features | Used by |
 |---|---|---|
@@ -232,6 +427,8 @@ Register v2's views. `weather_v1` is unchanged, so v1 keeps working:
 python -m airq.stores.feature_store --version v2
 ```
 
+![Feast UI listing the feature views of the project airq: weather_v1, and the on-demand view calendar_v2](images/feast-weather-v1-calendar-v2.png)
+
 ### Train v2
 
 Training v2 works as for v1, on the same test days, and scores the baseline again. v2 has a different feature set from the champion, so it becomes the `challenger`. Inference then predicts with both models, and writes both to `predictions`, told apart by `model_version`:
@@ -249,7 +446,34 @@ python -m airq.inference.infer --days 60                       # each of the las
 python -m airq.inference.infer --hindcast
 ```
 
-On the held-out test days of the run in [Results](docs/results.md#test-scores), the mean absolute error is 3.70 for the baseline, 1.95 for v1 and 0.77 for v2. Other backfills give other figures, in the same order.
+The hindcast queries in [Score the forecasts](#score-the-forecasts) now return rows for both model versions.
+
+#### Test scores
+
+These figures come from the same run as the sweep. v1 and v2 are XGBoost models with default settings. Training holds out the last 20% of days (146 days) for testing. v1 and v2 are trained in separate runs, on the same test days, and each run also scores the baseline on them:
+
+| Model | MAE |
+|---|---|
+| baseline | 3.70 |
+| v1 | 1.95 |
+| v2 | 0.77 |
+
+v1's error is well below the baseline's. PM2.5 follows the weather, and the forecast sees the weather change before it happens.
+
+v2's error is less than half of v1's. The simulation raises PM2.5 on weekdays, from traffic. The weather cannot show that, but the weekend flag can.
+
+The test days are the last ones, not a random sample. A real forecast only predicts days after the ones it learnt from, and only a split in time order tests that.
+
+#### Error by days ahead
+
+The backtest predicts seven days ahead from each of 60 past dates. All 60 fall inside the held-out test days, so neither model trained on them. Over the last 30 measured days:
+
+| Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| v1 | 1.81 | 1.95 | 1.66 | 1.63 | 2.01 | 1.88 | 2.09 |
+| v2 | 0.91 | 0.90 | 0.99 | 0.75 | 1.14 | 1.12 | 1.22 |
+
+v2 has the lower error at every lead. Its error mostly grows with the lead, because a weather forecast is less accurate further ahead. v1's error shows no clear trend.
 
 ### Promote v2
 
@@ -257,7 +481,7 @@ Promotion swaps the two aliases: v2 becomes the champion, and v1 becomes the cha
 
 ```bash
 python -m airq.stores.model_registry promote
-python -m airq.inference.infer                                 # forecast with v2 as the champion
+python -m airq.inference.infer --as-of tomorrow --days 2       # forecast as of today and tomorrow, with v2 as the champion
 ```
 
 A promotion carries over to later training runs: training v2 again keeps it the champion, and training v1 again makes the new v1 the challenger.
@@ -271,7 +495,7 @@ One web app, built with [NiceGUI](https://nicegui.io/), a Python framework that 
 
 ![The app's two tabs, the assistant, the local model and the shared queries over Iceberg and MLflow](images/app.png)
 
-Both tabs use the same queries, in `airq/app/reports.py`, so a number in the chat always matches the charts.
+Both tabs use the same queries, in [`reports.py`](airq/app/reports.py), so a number in the chat always matches the charts.
 
 ### Before you start
 
@@ -296,9 +520,11 @@ Open http://127.0.0.1:8090. The header shows the model versions in use. To use a
 - **Daily error:** each model's one-day-ahead error, one bar per day.
 - **Error by lead:** each model's average error over the last 30 days, for predictions made 1 to 7 days ahead.
 
+![The app's Monitoring tab: measured PM2.5 with v1's and v2's one-day-ahead predictions and latest forecasts, their daily errors, and the error by lead](images/app-monitoring.png)
+
 ### Assistant tab
 
-Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. The model answers each question by calling one of them, so every number comes from the data ([Concepts](docs/concepts.md#language-models-with-tools) explains how). The agent is in `airq/app/assistant.py`.
+Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. The model answers each question by calling one of them, so every number comes from the data ([Concepts](docs/concepts.md#language-models-with-tools) explains how). The agent is in [`assistant.py`](airq/app/assistant.py).
 
 Questions it answers well:
 
@@ -307,7 +533,9 @@ Questions it answers well:
 - What was the highest PM2.5 over the last seven days?
 - Which model has been more accurate over the last 30 days?
 
-The default model, `qwen3:4b-instruct`, is small. If an answer is wrong, improve the tools or the prompt in `airq/app/assistant.py` rather than switching to a larger model.
+![The app's Assistant tab answering "What is the forecast for tomorrow?" with the day, Thursday 2026-10-08, and the forecast value, 9.09 µg/m³](images/app-assistant.png)
+
+The default model, `qwen3:4b-instruct`, is small. If an answer is wrong, improve the tools or the prompt in [`assistant.py`](airq/app/assistant.py) rather than switching to a larger model.
 
 ### Load another day
 
@@ -363,6 +591,8 @@ The steps map onto them in the same order:
 Registering the features with `python -m airq.stores.feature_store` also stays a terminal command, before each training step. Inference has no step of its own, because Airflow starts it after each daily run and each training run.
 
 In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_features` is first unpaused, it runs straight away for the most recent day.
+
+![Airflow listing the three DAGs tagged airq, airq_features, airq_inference and airq_training, each with successful runs](images/airflow-airq-dags.png)
 
 The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote:
 

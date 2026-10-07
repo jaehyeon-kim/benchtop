@@ -32,7 +32,7 @@ Each message is one change, in a fixed **envelope**:
 | `source` | the database, table, transaction id and WAL position (`lsn`) the change came from |
 | `ts_ms` | when the connector processed it; `source.ts_ms` is when the database made it |
 
-The key is the row's primary key. Kafka's producer picks the partition "based on a hash of the key", so all the changes of one order land in one partition, in order. [Data](data.md#change-events) shows a full event.
+The key is the row's primary key. Kafka's producer picks the partition "based on a hash of the key", so all the changes of one order land in one partition, in order. [Data](data.md#change-events) describes the event, and [Step 3](../README.md#change-events) of the README shows a full one.
 
 `before` is null in every update here. A table's **replica identity** decides what PostgreSQL logs about the old row. With the default, the old key is sent only "if the update changed data in any of the column(s) that are part of the REPLICA IDENTITY index", and the whole old row only with `REPLICA IDENTITY FULL`. No update here changes an `id`, so no old row is sent. `after` still holds the full new row.
 
@@ -63,11 +63,11 @@ The Aiven S3 sink reads topics and writes their messages to files. Its README sa
 
 The file name template is `ecommerce-cdc/{{topic}}/{{partition}}-{{start_offset}}.jsonl`, where `start_offset` is "the Kafka offset of the first record in the file". With `format.output.type` set to `jsonl`, each line is one message, with the fields in `format.output.fields`: key, value, offset and timestamp.
 
-The sink reads every topic matching `topics.regex`, so a new table's topic is picked up without a change. A Kafka consumer learns of new topics only when it refreshes its **metadata**, every `metadata.max.age.ms`, five minutes by default. Debezium creates `ecommerce.cdc.orders` only when the first order is placed, after the sink has started, so in a test run the first `orders` file took about six minutes. `s3-sink.json` sets `consumer.override.metadata.max.age.ms` to 30 seconds. The `consumer.override.` prefix passes a setting to the connector's own consumer, which the worker allows because its override policy is the default, `All`. The first `orders` file then took about a minute.
+The sink reads every topic matching `topics.regex`, so a new table's topic is picked up without a change. A Kafka consumer learns of new topics only when it refreshes its **metadata**, every `metadata.max.age.ms`, five minutes by default. Debezium creates `ecommerce.cdc.orders` only when the first order is placed, after the sink has started, so the sink can take up to five minutes to see it. [`s3-sink.json`](../ecommerce/cdc/s3-sink.json) sets `consumer.override.metadata.max.age.ms` to 30 seconds. The `consumer.override.` prefix passes a setting to the connector's own consumer, which the worker allows because its override policy is the default, `All`. [Step 3](../README.md#files) of the README gives the times measured in a test run.
 
 ## Simulation model
 
-The shop is a **discrete-event simulation (DES)**, built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed; here the clock keeps pace with real time. `build` in `ecommerce/simulation/run.py` defines the model, and `ecommerce/core/config.py` holds its values:
+The shop is a **discrete-event simulation (DES)**, built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed; here the clock keeps pace with real time. `build` in [`run.py`](../ecommerce/simulation/run.py) defines the model, and [`config.py`](../ecommerce/core/config.py) holds its values:
 
 | Part | dynamic-des feature | Here |
 |---|---|---|
@@ -83,4 +83,4 @@ An order waits for a picker or for its customer's patience to run out, whichever
 
 Every value lives in the **registry** under a path, such as `ecommerce.resources.pickers.current_cap`, and a process reads the live value each time it draws one. `KafkaIngress` applies each `{"path_id": ..., "value": ...}` message on `ecommerce-control` to the registry. A lower picker count takes effect as pickers finish their current orders, because dynamic-des takes back only free capacity.
 
-A changed order is published again with the same `id`, so PostgreSQL updates the row and Debezium sends an update. The rules that do not depend on time, such as which status may follow which, are plain functions in `ecommerce/simulation/shop.py`, so the tests check them without running the model.
+A changed order is published again with the same `id`, so PostgreSQL updates the row and Debezium sends an update. The rules that do not depend on time, such as which status may follow which, are plain functions in [`shop.py`](../ecommerce/simulation/shop.py), so the tests check them without running the model.

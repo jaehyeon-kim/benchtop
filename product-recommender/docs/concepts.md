@@ -6,26 +6,40 @@ The ideas the [product-recommender](../README.md) is built on, each tied to wher
 
 A recommender that learns from each user's past clicks has nothing to go on for a new user or product. This is the **cold-start problem**.
 
-This project avoids it by learning from what is known about each visit instead. A first-time visitor still has an age, a way of arriving at the shop and a time of day, so a model that links those to clicks can recommend straight away.
+This project avoids it by learning from the visit's context instead: a first-time visitor still has an age, a traffic source and a time of day.
 
 ## Bandits
 
-A **multi-armed bandit** chooses between options whose value it can only learn by trying them. Here each product is an arm, showing it is a pull, and a click is the **reward**, 1 for a click and 0 for none.
+A **multi-armed bandit** is a problem in which a learner chooses again and again between options, and learns what each option is worth only by trying it. The terms:
+
+- **Arm:** one option. Here each of the 200 products is an arm.
+- **Pull:** choosing an arm once. Here, showing a product on a visit.
+- **Reward:** what a pull returns. Here 1 for a click and 0 for none.
+- **Policy:** the rule that picks the arm, using what has been learned so far.
+- **Bandit feedback:** only the reward of the pulled arm is seen. A visit shows whether the user clicked the product they were shown, and nothing about the others.
 
 On every visit a bandit balances two goals:
 
 - **Exploitation:** show the products it expects to be clicked, to collect clicks now.
 - **Exploration:** show products it knows little about, to learn whether they are better.
 
+Three common ways to balance the two, each used by a policy here:
+
+- **ε-greedy (epsilon-greedy):** show the product with the best expected reward, but with a small probability ε show a random one. LinGreedy uses ε = 0.1.
+- **Upper confidence bound (UCB):** add to each product's expected reward a bonus that is large when the product has been tried little, and show the highest total. LinUCB does this.
+- **Thompson sampling:** keep a probability distribution over each product's value, draw one value from each distribution, and show the highest draw. An uncertain product sometimes draws high, so it gets tried. LinTS and ClustersTS do this.
+
 A plain bandit learns one click rate per product. A **contextual bandit** learns how the click rate depends on the **context**, what is known about the visit. For example, a coffee can be a good choice in the morning and a poor one at night.
+
+Each policy scores all 200 products and shows the five highest, the **top-k** with k = 5 (`TOP_K` in [`config.py`](../recommender/core/config.py)).
 
 ## Features and the context vector
 
 A model needs numbers, so [`features.py`](../recommender/data/features.py) turns each user and product into **features**:
 
-- **Categories**, such as gender, become **one-hot** columns: one per value, 1 for the row's value and 0 for the rest. `gender_M` is 1 for a man.
-- **Numbers**, such as age and price, are **min-max scaled** to lie between 0 and 1, so no feature outweighs another because of its unit.
-- **Product text** becomes 10 numbers, `txt_0` to `txt_9`. TextWiser counts each word with TF-IDF, which weights down words common to many products, then reduces the counts to their 10 strongest patterns with SVD, singular value decomposition.
+- **Categories**, such as gender, become one-hot columns, such as `gender_M`.
+- **Numbers**, such as age and price, are min-max scaled to lie between 0 and 1.
+- **Product text** becomes 10 numbers, `txt_0` to `txt_9`: TextWiser weights the words with TF-IDF and reduces them to 10 dimensions with SVD.
 - **Visit time** becomes five flags: `is_morning` (06:00 to 12:00), `is_afternoon` (12:00 to 18:00), `is_evening` (18:00 to 24:00), `is_weekend` and `is_weekday`.
 
 The fitted transformations are saved, so a new user gets the same ones. The **context vector** `x` the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the hidden formula reads the product features.
@@ -50,7 +64,7 @@ LinUCB keeps one linear model per product, made of two values:
 - `A`, a 15 by 15 matrix. It starts as the identity matrix and grows by `x xᵀ` each time the product is shown, so it records the contexts the product has been shown in.
 - `b`, 15 numbers. It starts at 0 and grows by the reward times `x`, so it records the contexts the product was clicked in.
 
-From these come `A_inv`, the inverse of `A`, and the weights `θ = A_inv b`. A product's score for context `x` is:
+These are the two sums of a **ridge regression**, a linear regression that adds λ times the identity matrix to keep its weights small. MABWiser uses λ = 1, which is why `A` starts as the identity. From these come `A_inv`, the inverse of `A`, and the weights `θ = A_inv b`. A product's score for context `x` is:
 
 `score = xᵀθ + α √(xᵀ A_inv x)`
 
@@ -68,29 +82,83 @@ Both the prototype and the Flink job first train on the whole history, a **warm 
 
 ## Offline policy evaluation
 
-A **policy** is the rule that picks what to show. **Offline policy evaluation** scores a policy on a record of past visits instead of on real users. `recommender.run.evaluate` trains each policy with Mab2Rec on the first 8,000 visits, in order, and scores it with Jurity on the last 2,000. Each visit counts as its own user.
+A new policy could be tested on real users, but a poor one would lose clicks while it was tested. **Offline policy evaluation** scores a policy on **logged data** instead: a record of past visits made under another policy, called the **logging policy**. Each logged visit has its context, the one product shown, and the reward.
 
-The history records only the one product each visit was shown. What the user would have done with any other product is unknown. So a visit is scored only when its logged product is among the policy's five recommendations, which Jurity calls **matching**. With 5 of 200 products recommended, about 1 visit in 40 matches, some 50 of the 2,000.
+The log holds the reward of the product that was shown, and nothing about the 199 that were not.
 
-| Column | Measures, on the matched visits |
-|---|---|
-| `AUC(score)@5` | how well the policy's scores separate clicked products from the rest: 0.5 is chance, 1.0 is perfect |
-| `CTR(score)@5` | the click rate |
-| `Precision@5` | for visits that ended in a click, the share of the five that were clicked. One product is logged per visit, so it is at most 0.2 |
-| `Recall@5` | for the same visits, whether the clicked product was among the five. Here it is exactly five times the precision |
+### Replay
+
+The **replay** method, from Li, Chu, Langford and Wang's paper [Unbiased Offline Evaluation of Contextual-bandit-based News Article Recommendation Algorithms](https://arxiv.org/abs/1003.5956) (WSDM 2011), steps through the log one visit at a time. For each visit it asks the policy what it would show. If that is the logged product, the visit is kept and its reward counted. Otherwise the visit is skipped. Keeping the visits that pass a test and discarding the rest is a form of **rejection sampling**.
+
+Replay gives an unbiased estimate when two conditions hold:
+
+- The visits are independent of each other.
+- The logging policy chose the product **uniformly at random**, every product with the same chance.
+
+Then the kept visits are a fair sample, and with K products about one visit in K is kept.
+
+For example, a log shows each visit coffee, pizza or salad at random. The policy shows coffee in the morning and pizza otherwise.
+
+| Visit | Time | Logged product | Clicked | Policy would show | Result |
+|---|---|---|---|---|---|
+| 1 | morning | coffee | yes | coffee | kept, 1 click |
+| 2 | morning | pizza | no | coffee | skipped |
+| 3 | evening | salad | no | pizza | skipped |
+| 4 | evening | pizza | no | pizza | kept, 0 clicks |
+| 5 | morning | salad | yes | coffee | skipped |
+| 6 | evening | coffee | no | pizza | skipped |
+
+Two visits are kept and one was clicked, so the estimated click rate is 50%. Visit 5 was clicked, but it does not count, because the policy would not have shown salad. If the log had always shown coffee in the morning, morning visits would be kept far more often, and the sample would no longer be fair.
+
+This project meets both conditions. [`history.py`](../recommender/data/history.py) pairs a random user with a product drawn uniformly from the 200, at a random time. A real shop's log would not, and for that case Jurity also offers **inverse propensity scoring (IPS)** and **doubly robust** estimates, which weight each kept visit by how likely the logging policy was to show its product.
+
+### How this project applies it
+
+`recommender.run.evaluate` ([`evaluate.py`](../recommender/run/evaluate.py)) passes the six policies to Mab2Rec's `benchmark`. It trains each policy on the first 8,000 visits and scores it on the last 2,000 with Jurity's metrics. The visit times are random, so this is a random split. Each visit counts as its own user.
+
+It differs from the paper's replay in two ways:
+
+- **Five products, not one.** A visit is kept when the logged product is among the policy's five, which Jurity calls **matching**. The chance is 5 in 200, or 1 in 40, whatever the policy, so about 50 of the 2,000 visits are kept. The click rate on kept visits estimates the click rate of one product picked at random from the five.
+- **A fixed policy.** Each policy learns only from the 8,000 training visits. Unlike the paper's replay, it does not learn from the kept visits.
+
+Four of LinUCB's test visits, from the run with the default seed, 1237:
+
+| Visit | Time | Logged product | Clicked | Among LinUCB's five | Result |
+|---|---|---|---|---|---|
+| 8221 | weekend evening | Buffalo Chicken Pizza | yes | yes | kept, 1 click |
+| 8231 | weekday morning | Grilled Chicken Sandwich | no | yes | kept, 0 clicks |
+| 8003 | weekend evening | Dim Sims | yes | no | skipped |
+| 8024 | weekday morning | Strawberry Milkshake | yes | no | skipped |
+
+On weekend evenings LinUCB's five are mostly pizzas, and on weekday mornings they include coffees, as the [hidden click formula](#hidden-click-formula) rewards. Across the 2,000 test visits, 44 are kept and 9 of those were clicked, so its `CTR(score)@5` is 9 / 44 = 20.5%.
+
+### Support and uncertainty
+
+The number of visits a score is based on is its **support**. A click rate p measured on n visits has a **standard error** of about √(p(1 − p) / n), the typical distance between the measured rate and the true one. With p = 0.2 and n = 50 that is about 0.06. So two click rates a few points apart may differ by chance alone. AUC depends on the few clicks among them, so it is less certain still.
+
+### Metrics
+
+| Column | Measured on | Measures |
+|---|---|---|
+| `AUC(score)@5` | the kept visits | how well the policy's score for the logged product separates clicked visits from the rest. **AUC**, the area under the ROC curve, is the chance that a clicked visit gets a higher score than one that was not clicked: 0.5 is chance, 1.0 is perfect |
+| `CTR(score)@5` | the kept visits | the **click-through rate (CTR)**, the share of visits that ended in a click |
+| `Precision@5` | the test visits that ended in a click | the share of the five recommended products that were the clicked one. One product is logged per visit, so it is at most 0.2 |
+| `Recall@5` | the same visits | 1 if the clicked product was among the five and 0 if not, averaged. One product is logged per visit, so it is exactly five times the precision |
+
+### Policies
 
 | Policy | How it picks |
 |---|---|
 | Random | products at random, the baseline |
-| Popularity | products drawn at random, each weighted by its overall click rate |
-| LinGreedy | a linear model per product with no bonus. It picks the best prediction, and a random product 10% of the time |
-| LinUCB | as above |
-| LinTS | a linear model per product whose weights are drawn at random around their estimate, which is called Thompson sampling |
-| ClustersTS | visits grouped into 10 clusters by their context with k-means, and Thompson sampling within the nearest cluster |
+| Popularity | products drawn at random, each weighted by its overall click rate. It ignores the context |
+| LinGreedy | a linear model per product, with ε-greedy exploration: the best prediction, or a random product 10% of the time |
+| LinUCB | a linear model per product, with an upper confidence bound, as above |
+| LinTS | a linear model per product, with Thompson sampling: the weights are drawn at random around their estimate |
+| ClustersTS | visits grouped into 10 clusters by their context with k-means, and Thompson sampling on the click rates within the visit's nearest cluster |
 
 ## Splitting serving from training
 
-One process that recommends and learns does not scale: the next user waits while it learns, and copies of it would each learn a different model. Step 2 splits the work:
+One process that recommends and learns does not scale: the next user waits while it learns, and copies of it would learn different models. Step 2 splits the work:
 
 - **Serving**, the live client, keeps nothing between visits: it reads the models, scores and sends the result. So copies of it could run side by side.
 - **Training**, the Flink job, holds every product's `A` and `b` and updates them.
@@ -99,9 +167,17 @@ One process that recommends and learns does not scale: the next user waits while
 
 The cost is that the client ranks with models a few seconds old.
 
+This makes Step 2 an **event-driven** system: the client writes an **event**, a record of something that happened, and the Flink job reacts to it. Neither calls the other.
+
+## Feedback events
+
+A **feedback event** is the result of one visit, which the live client ([`live.py`](../recommender/run/live.py)) sends to the topic `feedback-events`, keyed by product id. It holds the product the result is recorded against (the clicked one, or else the first one shown), the reward, the 15-number context vector, an id and the visit time. It is encoded in Avro with `FEEDBACK_SCHEMA` ([`models.py`](../recommender/core/models.py)), which the serializer registers in Karapace under the subject `feedback-events-value`. The Flink job reads the schema id at the start of each message to fetch the schema ([`KafkaSourceFactory.kt`](../recsys-trainer/src/main/kotlin/me/jaehyeon/infrastructure/kafka/KafkaSourceFactory.kt)).
+
 ## Flink job
 
 The trainer in [`recsys-trainer`](../recsys-trainer) is a Flink job, which runs until it is cancelled and processes each event as it arrives.
+
+A Flink cluster's **JobManager** plans the job and coordinates its checkpoints, and its **TaskManagers**, three in odctl's `flink-full`, run the tasks. The job runs each stage as six tasks, its parallelism in [`AppConfig.kt`](../recsys-trainer/src/main/kotlin/me/jaehyeon/config/AppConfig.kt).
 
 - **Hybrid source:** Flink's `HybridSource` reads its sources one after another. The job reads the history file from SeaweedFS, then switches to the topic `feedback-events` when the file ends.
 - **Keyed state per product:** `keyBy { it.productId }` sends every event for a product to the same task, and Flink's **keyed state** keeps a value per key. So each event updates exactly its own product's `A` and `b`, with no lookup.
@@ -111,7 +187,7 @@ The trainer in [`recsys-trainer`](../recsys-trainer) is a Flink job, which runs 
 
 ## Valkey as the model store
 
-Valkey is an in-memory key-value store, forked from Redis, and Redis clients work with it: the client uses `redis-py` and the Flink job Jedis. Each product's model is one key holding JSON with `A_inv` and `b`.
+Valkey is a fork of Redis, so the client uses `redis-py` and the Flink job Jedis. Each product's model is one key holding JSON with `A_inv` and `b`.
 
 The client reads every model on every visit with one `MGET` of all 200 keys ([`valkey.py`](../recommender/stores/valkey.py)). It has to: the score depends on the visit's context, so finding the five best means scoring every product for this visit. `MGET` returns them in one round trip.
 

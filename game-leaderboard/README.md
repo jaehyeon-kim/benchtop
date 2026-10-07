@@ -15,7 +15,7 @@ More detail is in two documents:
 
 Four parts do the work:
 
-- **Simulation:** plays the game in real time with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and sends each score to the Kafka topic `game-scores`.
+- **Simulation:** plays the game in real time with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and sends each score to the Kafka [topic](docs/concepts.md#kafka-basics) `game-scores`.
 - **Flink jobs:** one per leaderboard. Each reads the topic and keeps its leaderboard up to date as scores arrive. A Flink SQL query of this kind never finishes: it keeps its result current for as long as it runs. [Concepts](docs/concepts.md#continuous-queries-and-dynamic-tables) explains how.
 - **PostgreSQL:** holds each leaderboard as a table with one row per rank.
 - **Dashboard:** reads the four tables and redraws them every 2 seconds.
@@ -102,7 +102,7 @@ The web UIs:
 
 The code connects to Kafka, Karapace, Flink and PostgreSQL at the addresses in [`leaderboard/core/config.py`](leaderboard/core/config.py), so there is nothing to configure.
 
-## Step 1: Run the simulation
+## Step 1: run the simulation
 
 ```bash
 python -m leaderboard.simulation.run     # Ctrl + C to stop
@@ -117,13 +117,13 @@ It creates two Kafka topics if they are missing: `game-scores` for the scores, a
 
 The number of players grows for the first few minutes, until as many leave as arrive, and then about 27 scores a second are sent. [Concepts](docs/concepts.md#a-discrete-event-simulation-of-the-game) describes the model.
 
-Each score is sent in Avro, a compact binary format. The first score registers its schema in Karapace, under the subject `game-scores-value`, the name Karapace stores it by. In Kafka UI, open the topic `game-scores` and its **Messages** tab, and set **Value Serde** to `SchemaRegistry` to read them:
+Each score is sent in [Avro](docs/concepts.md#avro-and-the-schema-registry), with its schema registered in Karapace under the subject `game-scores-value`. In Kafka UI, open the topic `game-scores` and its **Messages** tab, and set **Value Serde** to `SchemaRegistry` to read them:
 
 ![Kafka UI showing the newest game-scores messages, decoded with their Avro schema](images/kafka-ui-game-scores.png)
 
 Each score names the player, their team, the score and the time it was earned. [Data](docs/data.md#score-events) lists the fields.
 
-## Step 2: Submit the Flink jobs
+## Step 2: submit the Flink jobs
 
 In a second terminal, with the environment activated:
 
@@ -134,7 +134,7 @@ python -m leaderboard.jobs.submit
 It does three things:
 
 1. **Creates the tables.** It creates the PostgreSQL schema `game`, with the four leaderboard tables in [`tables.sql`](leaderboard/jobs/tables.sql).
-2. **Adds a library to Flink.** It copies the OpenLineage client library into Flink's `lib` folder. Flink's JDBC connector, which writes to PostgreSQL, needs it, and odctl's Flink image has a copy, but not in that folder.
+2. **Adds a library to Flink.** It copies the OpenLineage client library into Flink's `lib` folder. Flink's JDBC [connector](docs/concepts.md#flink-basics), which writes to PostgreSQL, needs it, and odctl's Flink image has a copy, but not in that folder.
 3. **Submits four jobs**, one per job file in [`leaderboard/jobs/`](leaderboard/jobs/), from [`01-top-teams.sql`](leaderboard/jobs/01-top-teams.sql) to [`04-team-mvps.sql`](leaderboard/jobs/04-team-mvps.sql). Each runs with the shared table definitions in [`00-ddl.sql`](leaderboard/jobs/00-ddl.sql). [Concepts](docs/concepts.md#four-jobs-and-one-init-file) explains why there are four jobs rather than one, and why the table definitions are loaded with each.
 
 In the Flink UI, **Jobs** then **Running Jobs** lists the four jobs, all `RUNNING`:
@@ -153,7 +153,7 @@ docker exec postgres psql -U user -d odctl -c "SELECT * FROM game.top_teams ORDE
 
 Run it again a few seconds later, and the totals have moved on. [Concepts](docs/concepts.md#top-n-with-row_number) explains how a query keeps a top 10, and [why the tables are keyed on the rank](docs/concepts.md#changelogs-and-sinks-keyed-on-the-rank). [Data](docs/data.md#leaderboard-tables) lists the columns.
 
-## Step 3: Open the dashboard
+## Step 3: open the dashboard
 
 ```bash
 python -m leaderboard.app.ui
@@ -166,10 +166,10 @@ Open http://127.0.0.1:8091. The four charts redraw every 2 seconds while the sim
 For the first 10 minutes or so there are few teams, so some leaderboards have fewer than 10 rows. What to look at:
 
 - **Top teams** and **top players** grow steadily. A score held while a phone was offline still counts when it arrives ([why](docs/concepts.md#event-time-and-processing-time)).
-- **Hot streaks** change on every redraw. They run about 5 seconds behind the other charts, and leave out scores that arrive minutes late ([why](docs/concepts.md#over-windows-for-the-hot-streaks)).
+- **Hot streaks** change on every redraw. They run about 5 seconds behind the other charts, and leave out scores that arrive minutes [late](docs/concepts.md#watermarks-and-late-events) ([why](docs/concepts.md#over-windows-for-the-hot-streaks)).
 - **Team MVPs** are led by the smallest teams, because a team of one gives its player a share of 1.0 ([why](docs/concepts.md#why-small-teams-lead-the-team-mvps)). A share can go just above 1.0 for a moment ([why](docs/concepts.md#joining-two-aggregates)).
 
-## Step 4: Change the game while it runs
+## Step 4: change the game while it runs
 
 The simulation reads parameter changes from the topic `game-control`. It uses each new value from the next arrival or round. Make every new player a robot:
 

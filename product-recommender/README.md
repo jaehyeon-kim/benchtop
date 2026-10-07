@@ -16,7 +16,7 @@ More detail is in two documents:
 
 ## Architecture
 
-The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. The algorithm is **LinUCB**, one small linear model per product. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden formula decides each click, so there is a pattern to find.
+The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. So it can recommend to a first-time visitor, which avoids the [cold-start problem](docs/concepts.md#cold-start). The algorithm is **LinUCB**, one small linear model per product. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden formula decides each click, so there is a pattern to find.
 
 ### What you will build
 
@@ -32,7 +32,7 @@ The recommender is a **contextual bandit**: for each visit it shows five product
 
 ![The live client sends feedback to Kafka, the Flink job trains the models from it and from the history in SeaweedFS, and writes them to Valkey for the client to read](images/part-2.png)
 
-1. Build the Flink job, start the services, and submit the job. It trains the models on the history first.
+1. Build the Flink job and submit it. It trains the models on the history first.
 2. Run the live client. It recommends from the models in Valkey and sends each result to Kafka.
 3. Watch the Flink job pick up the results and write the updated models back.
 
@@ -60,11 +60,55 @@ You need Docker, [uv](https://docs.astral.sh/uv/), Python 3.11 and a JDK 17. Run
 
 The project needs Python 3.11. It pins `pandas<2.0`, and the last pandas 1.x release, 1.5.3, publishes no wheels for Python 3.12 or later.
 
+### Python environment
+
 ```bash
 uv venv --python 3.11 .venv          # create .venv
 source .venv/bin/activate            # activate it, in each new shell
 uv pip install -r requirements.txt   # includes the odctl command
 ```
+
+### Services
+
+Step 1 needs none of the services. Step 2 uses Kafka, Flink and Valkey:
+
+```bash
+odctl up kafka-lite flink-full valkey   # Kafka, Flink with 3 TaskManagers, and Valkey
+```
+
+`odctl ps --all` lists the containers:
+
+```text
+🌟 Active Profiles: catalog, flink-full, kafka-lite, postgres, storage, valkey
+
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Container           ┃ Service       ┃ State   ┃ Health  ┃ Ports                                                   ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ connect             │ connect       │ running │ -       │ 8083 ➡️  8083/tcp                                       │
+│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 ➡️  8081/tcp                                       │
+│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 ➡️  8083/tcp                                       │
+│ flink-taskmanager-a │ taskmanager-a │ running │ -       │ -                                                       │
+│ flink-taskmanager-b │ taskmanager-b │ running │ -       │ -                                                       │
+│ flink-taskmanager-c │ taskmanager-c │ running │ -       │ -                                                       │
+│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 ➡️  8181/tcp                                       │
+│ kafka               │ kafka         │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
+│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 ➡️  8080/tcp                                       │
+│ karapace            │ karapace      │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ odctl-init-deps     │ init-deps     │ exited  │ -       │ -                                                       │
+│ postgres            │ postgres      │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
+│ seaweed             │ seaweed       │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ seaweed-init        │ seaweed-init  │ exited  │ -       │ -                                                       │
+│ valkey              │ valkey        │ running │ healthy │ 6379 ➡️  6379/tcp                                       │
+└─────────────────────┴───────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
+```
+
+`flink-full` also starts SeaweedFS, which the job reads the history from.
+
+The web UIs:
+
+- Flink: http://127.0.0.1:8082
+- Kafka UI: http://127.0.0.1:8086
+- SeaweedFS file browser: http://127.0.0.1:8889
 
 ## Step 1: prototype in Python
 
@@ -109,7 +153,7 @@ LinTS           0.640798      0.211538     0.008527  0.042636
 ClustersTS      0.550505      0.153846     0.004651  0.023256
 ```
 
-A visit is scored only when its logged product is among the policy's five. `CTR(score)@5` is the click rate on those visits: LinUCB's 20.5% is double Random's 10.2%, and its ranking score, `AUC(score)@5`, is close to the best. LinGreedy separates clicks best (AUC 0.89), but its picks are clicked little more often than Random's (CTR 11.8% against 10.2%), because without a bonus it stays with the products it learned first. LinTS has a slightly higher CTR than LinUCB, but ranks poorly (AUC 0.64). LinUCB is the one policy high on both, so it is chosen. [Concepts](docs/concepts.md#offline-policy-evaluation) explains each column and policy.
+A visit is scored only when its logged product is among the policy's five. Each policy's click rate rests on 39 to 52 such visits, so a difference of a few points can come from chance ([why](docs/concepts.md#support-and-uncertainty)). `CTR(score)@5` is the click rate on those visits: LinUCB's 20.5% is double Random's 10.2%, and its ranking score, `AUC(score)@5`, is close to the best. LinGreedy separates clicks best (AUC 0.89), but its picks are clicked little more often than Random's (CTR 11.8% against 10.2%), because without a bonus it stays with the products it learned first. LinTS has a slightly higher CTR than LinUCB, but ranks poorly (AUC 0.64). LinUCB is the one policy high on both, so it is chosen. [Concepts](docs/concepts.md#offline-policy-evaluation) explains each column and policy.
 
 ### Run LinUCB locally
 
@@ -137,46 +181,13 @@ Step 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serv
 - **Serving:** `python -m recommender.run.live` reads every product's model from Valkey, recommends the five highest-scoring products, and sends the visit's result to the Kafka topic `feedback-events`.
 - **Training:** the Flink job `RecommenderParameterUpdate` reads the history, then every feedback event. Every 5 seconds it writes each changed model to Valkey, under the key `linucb:<product id>`.
 
-### Start the services
+### Build the Flink job
 
 ```bash
-(cd recsys-trainer && ./gradlew shadowJar)   # build the Flink job's JAR
-odctl up kafka-lite flink-full valkey        # Kafka, Flink with 3 TaskManagers, and Valkey
+(cd recsys-trainer && ./gradlew shadowJar)
 ```
 
-`odctl ps --all` lists the containers:
-
-```text
-🌟 Active Profiles: catalog, flink-full, kafka-lite, postgres, storage, valkey
-
-┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Container           ┃ Service       ┃ State   ┃ Health  ┃ Ports                                                   ┃
-┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ connect             │ connect       │ running │ -       │ 8083 ➡️  8083/tcp                                       │
-│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 ➡️  8081/tcp                                       │
-│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 ➡️  8083/tcp                                       │
-│ flink-taskmanager-a │ taskmanager-a │ running │ -       │ -                                                       │
-│ flink-taskmanager-b │ taskmanager-b │ running │ -       │ -                                                       │
-│ flink-taskmanager-c │ taskmanager-c │ running │ -       │ -                                                       │
-│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 ➡️  8181/tcp                                       │
-│ kafka               │ kafka         │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
-│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 ➡️  8080/tcp                                       │
-│ karapace            │ karapace      │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
-│ odctl-init-deps     │ init-deps     │ exited  │ -       │ -                                                       │
-│ postgres            │ postgres      │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
-│ seaweed             │ seaweed       │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
-│ seaweed-init        │ seaweed-init  │ exited  │ -       │ -                                                       │
-│ valkey              │ valkey        │ running │ healthy │ 6379 ➡️  6379/tcp                                       │
-└─────────────────────┴───────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
-```
-
-`./gradlew` downloads Gradle and the dependencies the first time, which takes a few minutes. `flink-full` also starts SeaweedFS, which the job reads the history from.
-
-The web UIs:
-
-- Flink: http://127.0.0.1:8082
-- Kafka UI: http://127.0.0.1:8086
-- SeaweedFS file browser: http://127.0.0.1:8889
+`./gradlew` downloads Gradle and the dependencies the first time, which takes a few minutes.
 
 ### Submit the Flink job
 
@@ -218,9 +229,18 @@ To see the job write the models, watch a TaskManager's log in a second terminal:
 docker logs flink-taskmanager-a -f
 ```
 
-A line such as `Updated model for Product 192 in batch` appears each time the job writes a product's model to Valkey. The feedback events are in Kafka UI, under the topic `feedback-events`. [Concepts](docs/concepts.md#valkey-as-the-model-store) explains why the client reads every model on every visit.
+A line such as `Updated model for Product 192 in batch` appears each time the job writes a product's model to Valkey. The [feedback events](docs/concepts.md#feedback-events) are in Kafka UI, under the topic `feedback-events`. [Concepts](docs/concepts.md#valkey-as-the-model-store) explains why the client reads every model on every visit.
 
 ![Kafka UI showing the newest messages in feedback-events, with one feedback event decoded: its product, reward and context vector](images/kafka-ui-feedback-events.png)
+
+### Troubleshooting
+
+| What you see | Cause and fix |
+|---|---|
+| `uv pip install` builds pandas from source, or fails | The environment is not Python 3.11: recreate it with `uv venv --python 3.11 .venv`. |
+| `JAR not found at recsys-trainer/build/libs/recsys-trainer-1.0.jar` | Build the JAR first: `(cd recsys-trainer && ./gradlew shadowJar)`. |
+| `Bootstrap CSV not found at data/training_log.csv` | Run `python -m recommender.run.prepare` first. |
+| The live client or the clean-up first prints `AuthlibDeprecationWarning: The httpx module is deprecated` | A notice from `authlib`, which the schema registry client imports. It does no harm. |
 
 ## Tests
 
@@ -232,15 +252,6 @@ python -m pytest tests                  # data generation, features, the simulat
 ```
 
 They check, for example, that a seed repeats the users and clicks, that a click moves a product up the ranking, and that the Flink job updates `A` and `b` as LinUCB does. GitHub runs both after the lint checks on every push to `main`.
-
-## Troubleshooting
-
-| What you see | Cause and fix |
-|---|---|
-| `uv pip install` builds pandas from source, or fails | The environment is not Python 3.11: recreate it with `uv venv --python 3.11 .venv`. |
-| `JAR not found at recsys-trainer/build/libs/recsys-trainer-1.0.jar` | Build the JAR first: `(cd recsys-trainer && ./gradlew shadowJar)`. |
-| `Bootstrap CSV not found at data/training_log.csv` | Run `python -m recommender.run.prepare` first. |
-| The live client or the clean-up first prints `AuthlibDeprecationWarning: The httpx module is deprecated` | A notice from `authlib`, which the schema registry client imports. It does no harm. |
 
 ## Clean up
 

@@ -1,6 +1,17 @@
 # Concepts behind the design
 
-The ideas behind [game-leaderboard](../README.md), in the order a score meets them.
+The ideas behind [game-leaderboard](../README.md): first the Kafka and Flink basics, then the rest in the order a score meets them.
+
+## Kafka basics
+
+Each score is a message in the topic `game-scores`. A topic is split into **partitions**, and Kafka keeps the order of messages only within a partition; [`kafka.py`](../leaderboard/stores/kafka.py) creates each topic with one partition. A message's **offset** is its position in its partition, and a **consumer group** records the offset it has reached, so it can carry on from there.
+
+## Flink basics
+
+- A Flink cluster has a **JobManager**, which schedules work and handles failures, and **TaskManagers**, which run it. A TaskManager's **task slots** set how many tasks it runs at once; odctl's has 5.
+- A **job** is a running program made of **operators**, such as the Kafka source, an aggregation and the sink. The Flink UI draws them as the job's plan. Each job file, such as [`01-top-teams.sql`](../leaderboard/jobs/01-top-teams.sql), sets `parallelism.default` to 1, so each operator runs as one copy and each job needs one slot.
+- **Flink SQL** writes a job as SQL over tables. The **SQL client** submits each `INSERT` to the cluster as a job; [`flink.py`](../leaderboard/stores/flink.py) runs it inside the JobManager container.
+- A Flink table holds no data. Its **connector** reads from or writes to an outside system, and its **format** converts between bytes and rows. In [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql), `scores` is a source table with the `kafka` connector and `avro-confluent` format, and the four leaderboards are sink tables with the `jdbc` connector.
 
 ## A discrete-event simulation of the game
 
@@ -24,6 +35,10 @@ A session joins a team with room, or forms a new one: a team holds up to 15 play
 
 Every parameter is kept in dynamic-des's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. [`leaderboard.simulation.control`](../leaderboard/simulation/control.py) sends a new value to `game-control`, and the ingress writes it into the registry.
 
+## Avro and the schema registry
+
+Each score is encoded in **Avro**, a binary format that needs its **schema** to decode. The serializer in [`kafka.py`](../leaderboard/stores/kafka.py) registers `AVRO_SCHEMA` ([`models.py`](../leaderboard/core/models.py)) in Karapace under the subject `game-scores-value`, and puts the schema's id in front of each score. Flink's `avro-confluent` format reads that id to fetch the schema, and decodes into the source table's columns, so the two must match.
+
 ## Event time and processing time
 
 - **Event time** is when an event happened, on the device that produced it. It travels in the event, as `event_time_millis`.
@@ -46,6 +61,8 @@ The watermark stays 5 seconds behind the latest event time seen, so an event may
 
 A stream never ends, so Flink treats it as a **dynamic table**, one that changes as rows arrive. A query over it is a **continuous query**: it never finishes, and Flink keeps its result up to date. Each job is one. [`02-top-players.sql`](../leaderboard/jobs/02-top-players.sql) reads as ordinary SQL: it totals each player's scores, ranks the totals and keeps the top 10. The difference is that every new score can change its result.
 
+The source table in [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) sets `'scan.startup.mode' = 'earliest-offset'`, so each job reads the topic from its first message. Its result therefore includes every score sent before the job started. Without the setting, the Kafka connector starts from the offsets last committed for its consumer group.
+
 ## Top-N with ROW_NUMBER
 
 A **Top-N** query keeps the N best rows by some order. Flink recognises this pattern:
@@ -65,7 +82,9 @@ A continuous query's result changes, so Flink sends it on as a **changelog**: in
 - a **retract** stream sends an update as two messages: take back the old row, add the new one;
 - an **upsert** stream sends one message: the new row, which replaces the row with the same unique key.
 
-The JDBC sink accepts inserts, update afters and deletes, so it works as an upsert sink. For PostgreSQL it writes `INSERT ... ON CONFLICT ... DO UPDATE`. Its key is the table's primary key, and here that is the rank:
+A result that only ever adds rows is **append-only**, and its changelog holds only inserts. A total or a ranking is an **updating** result, because a later score changes a row already sent. Every job here produces an updating result, so its sink must accept updates.
+
+The JDBC sink accepts inserts, update afters and deletes, so it works as an **upsert sink**. It works this way only because the table declares a **primary key**. Without one, it would only append rows. For PostgreSQL it writes `INSERT ... ON CONFLICT ... DO UPDATE`. Its key is the table's primary key, and here that is the rank:
 
 ```sql
 CREATE TABLE top_players (
@@ -86,7 +105,7 @@ A job remembers things between events, such as every player's total. This is **s
 | `table.exec.mini-batch.enabled`, `.allow-latency`, `.size` | `true`, `1s`, `2000`; `1000` for hot streaks | collects rows and processes them together, so each key's state is read and written once per batch; a batch runs after 1 second or at the size, whichever comes first |
 | `execution.checkpointing.interval` | `10s` | saves a consistent copy of the state with the job's position in the topic; checkpoints are off by default |
 
-- **TTL:** a session lasts about 5 minutes and a late score arrives about 7 minutes after it was earned, so an hour never drops a total that can still change.
+- **TTL** (time to live): a session lasts about 5 minutes and a late score arrives about 7 minutes after it was earned, so an hour never drops a total that can still change.
 - **Mini-batch:** the three settings must be set together. At a few dozen scores a second a batch never reaches its size, so the leaderboards change about once a second.
 - **Checkpoints:** after a failure, Flink restores the last checkpoint and reads on from its position. The JDBC sink writes its buffered rows every second (`sink.buffer-flush.interval`), at 100 rows (`sink.buffer-flush.max-rows`), and at each checkpoint. Rows processed again after a failure are written twice, which the upsert on `rnk` makes harmless.
 
@@ -120,7 +139,7 @@ A team's top scorer has a share of at least 1 divided by the team's size: 1.0 fo
 
 One job with four `INSERT`s would share one set of settings. As four jobs, each has its own settings and its own `pipeline.name`, and can be cancelled alone.
 
-All four use the tables in [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql). Flink's default catalog keeps table definitions in memory for one SQL client session only, so [`leaderboard.jobs.submit`](../leaderboard/jobs/submit.py) runs each job in its own session with [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) as the **init file**:
+All four use the tables in [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql). A **catalog** stores table definitions. Flink's default catalog keeps them in memory for one SQL client session only, so [`leaderboard.jobs.submit`](../leaderboard/jobs/submit.py) runs each job in its own session with [`00-ddl.sql`](../leaderboard/jobs/00-ddl.sql) as the **init file**:
 
 ```bash
 ./bin/sql-client.sh -i /tmp/game-sql/00-ddl.sql -f /tmp/game-sql/02-top-players.sql

@@ -13,9 +13,7 @@ Polling works with any web server, but every browser runs its own timer and send
 
 ## WebSockets compared with HTTP requests
 
-An **HTTP request** is one question and one answer, after which the exchange is over. The server cannot send anything the browser has not asked for.
-
-A **WebSocket** starts as an HTTP request and then stays open. The browser sends the headers `Upgrade: websocket` and `Connection: Upgrade`. The server answers with status `101 Switching Protocols`. From then on the connection carries messages both ways until either side closes it.
+An HTTP request is one question and one answer, so the server cannot send anything the browser has not asked for. A **WebSocket** starts as an HTTP request and then stays open. The browser sends the headers `Upgrade: websocket` and `Connection: Upgrade`. The server answers with status `101 Switching Protocols`. From then on the connection carries messages both ways until either side closes it.
 
 Here [`server.py`](../sales/api/server.py) declares the endpoint with FastAPI's `@app.websocket("/ws")`. For each connection it calls `accept`, then loops: read the records, send them with `send_json` as one text message of JSON, and sleep. The loop ends when the client leaves, and the server closes its PostgreSQL connection. Each dashboard holds its own connection, and the server keeps no list of clients.
 
@@ -25,7 +23,7 @@ Two settings in [`config.py`](../sales/core/config.py) decide what the dashboard
 
 Each message holds the whole window again, not only what changed. So the dashboards recalculate everything from each message, and one that connects late is correct from its first message. The cost grows with the number of connections, because each runs its own query: ten open dashboards run it ten times every five seconds. It also grows with a longer window, which sends more rows, and a shorter interval, which queries more often for data that is only a little newer.
 
-The query, `RECENT_ITEMS` in [`postgres.py`](../sales/stores/postgres.py), filters with `clock_timestamp()`. PostgreSQL's `current_timestamp` returns the start time of the current transaction, while `clock_timestamp()` returns the actual current time.
+The query, `RECENT_ITEMS` in [`postgres.py`](../sales/stores/postgres.py), filters with `clock_timestamp()`. The tables store times as ISO 8601 text, so the query casts them with `::timestamptz`. PostgreSQL's `current_timestamp` returns the start time of the current transaction, while `clock_timestamp()` returns the actual current time.
 
 ## Streamlit's rerun model
 
@@ -41,7 +39,7 @@ Unticking the box asks for a rerun. Streamlit checks for that request each time 
 
 ## React state and effects
 
-A React component is a function that returns what the page should show. React calls it again, a **re-render**, when its data changes. React's **hooks** are functions, with names that start with `use`, that a component calls to use React's features. `useDashboard`, in [`useDashboard.ts`](../nextjs/src/lib/useDashboard.ts), is this project's own hook, built from three of React's:
+React calls a component again, a **re-render**, when its data changes. React's **hooks** are functions, with names that start with `use`, that a component calls to use React's features. `useDashboard`, in [`useDashboard.ts`](../nextjs/src/lib/useDashboard.ts), is this project's own hook, built from three of React's:
 
 - **`useState`** adds a state variable. Calling its set function stores a new value and triggers a re-render. The cards and the chart options are kept this way.
 - **`useRef`** holds a value that is not needed for rendering, and changing it triggers no re-render. The last message's numbers are kept there, to work out each card's change.
@@ -49,11 +47,11 @@ A React component is a function that returns what the page should show. React ca
 
 The WebSocket comes from `react-use-websocket`. `useWebSocket(url, options, connect)` returns the latest message, parsed as JSON, as `lastJsonMessage`. The checkbox's value is passed as `connect`, and `false` closes the connection. `shouldReconnect: () => true` reconnects if the server goes away, and `share: false` gives each hook its own connection.
 
-Next.js renders components on the server by default. A file that starts with `"use client"` is an entry point to the browser instead, which a component needs for state, events or browser features. [`page.tsx`](../nextjs/src/app/page.tsx) has it, because it holds the checkbox's state and the WebSocket. [`providers.tsx`](../nextjs/src/app/providers.tsx) has it because [`layout.tsx`](../nextjs/src/app/layout.tsx), a server component, renders it, and NextUI's provider is itself a client component.
+Next.js renders components on the server by default, as **server components**. A file that starts with `"use client"` makes its components, and the components it imports, **client components**, which also run in the browser. A component needs this for state, events or browser features. [`page.tsx`](../nextjs/src/app/page.tsx) has it, because it holds the checkbox's state and the WebSocket. [`providers.tsx`](../nextjs/src/app/providers.tsx) has it because [`layout.tsx`](../nextjs/src/app/layout.tsx), a server component, renders it, and NextUI's provider is itself a client component.
 
 ## ECharts options
 
-ECharts draws a chart from one object of options. The two dashboards build the same options, in [`metrics.py`](../sales/dashboard/metrics.py) and [`processing.ts`](../nextjs/src/lib/processing.ts): a category `xAxis` with its labels rotated 75 degrees, a value `yAxis`, one bar series with `colorBy: "data"` for a colour per bar, and a `grid`.
+ECharts draws a chart from one object of **options**. Streamlit passes it to `st_echarts(options=...)`, and Next.js to `<ReactECharts option={...}>`, which hands it to ECharts' `setOption`. The two dashboards build the same options, in [`metrics.py`](../sales/dashboard/metrics.py) and [`processing.ts`](../nextjs/src/lib/processing.ts): a category `xAxis` with its labels rotated 75 degrees, a value `yAxis`, one bar series with `colorBy: "data"` for a colour per bar, and a `grid`.
 
 A **grid** is the rectangle the axes are drawn in. By default, `grid.left`, `grid.right`, `grid.top` and `grid.bottom` place the axes themselves, and the labels hang outside them. In ECharts 5.6.0 the default bottom is 70 pixels, which is too small for a rotated label such as "United Kingdom", so without `containLabel` the label is cut off. With `grid.containLabel: true`, those settings place the rectangle that holds the axes and their labels, so the labels always fit. The ECharts documentation recommends it when the length of the labels is hard to predict. streamlit-echarts bundles ECharts 6.1.0, which marks `containLabel` deprecated in favour of `grid.outerBoundsMode` but still honours it.
 
@@ -80,13 +78,13 @@ An order moves through its statuses like this:
 
 An order that finds no free picker within its patience time, about two minutes, becomes `Cancelled` instead.
 
-Each row goes to PostgreSQL through a `PostgresEgress` for its table. Orders and order items are **upserted** on `id`: a row with an existing id replaces the old one, so a status change updates the row. The other tables insert only, and a row whose key exists is skipped, so a restarted simulation writes the products again without an error.
+An **egress** is a dynamic-des connector that sends the simulation's rows to another system. Each row goes to PostgreSQL through a `PostgresEgress` for its table. Orders and order items are upserted on `id`, so a status change updates the row. The other tables skip a row whose key exists, so a restarted simulation writes the products again without an error.
 
 ## Live changes through the parameter table
 
 Every rate, time and chance lives in dynamic-des's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The processes read the current value each time they draw one, so a change takes effect from the next draw.
 
-Changes reach the registry through `PostgresIngress`, which reads `dashboard.params`:
+Changes reach the registry through `PostgresIngress`, an **ingress**: a connector that brings changes into the simulation. It reads `dashboard.params`:
 
 1. `sales.simulation.control` inserts a row with the path and the new value, marked not applied.
 2. Every two seconds, the ingress sends each row not yet applied to the registry, and marks it applied.

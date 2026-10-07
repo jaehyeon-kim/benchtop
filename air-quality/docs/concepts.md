@@ -19,6 +19,8 @@ An ML system splits into three kinds of pipeline, known as FTI pipelines:
 
 The pipelines never call each other. They share state through two stores: the **feature store**, which holds features, and the **model registry**, which holds models. So each pipeline has clear inputs and outputs and can be run, scheduled, tested and changed on its own. Here the feature store is Feast over Iceberg tables, the model registry is MLflow, and Airflow schedules the pipelines.
 
+Feast's **offline store** serves history for training and batch predictions; its **online store** serves the latest values for single requests. Here the offline store is DuckDB over the Iceberg tables, and there is no online store, because nothing is predicted on request ([`feature_store.py`](../airq/stores/feature_store.py)).
+
 ## Feature groups, feature views, entities and labels
 
 These terms are easiest to see on an example row of the `daily_weather` table:
@@ -32,7 +34,7 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 - **Feature:** one input a model learns from, such as `temperature_2m`.
 - **Feature group:** a table of features, like `daily_weather` above.
 - **Entity:** what a row is about. Here: the station (`location_id`), plus how many days ahead the forecast was made (`lead_days`).
-- **Event time:** the time the values describe. In the row above it is `day`, 20 September: the forecast is about the weather on 20 September. It is not when the forecast was made (`issued_on`, 19 September), and not when the row was written to the table, which is later. When training asks for the features of 20 September, Feast finds this row by its event time.
+- **Event time:** the time the values describe. In the row above it is `day`, 20 September: the forecast is about the weather on 20 September. It is not when the forecast was made (`issued_on`, 19 September). Feast finds rows by their event time.
 - **Feature view:** a named set of features that a model reads. `weather_v1` picks the three weather columns above, and v1 reads only that view. `calendar_v2` holds the weekend flag, and v2 reads both views. A feature view stores no data; it only says which columns to read.
 - **Label:** the answer the model learns to predict: here `pm2_5`, the day's measured air pollution, from the `daily_air_quality` table. It is kept apart from the features and joined to them only when training data is built.
 
@@ -42,11 +44,13 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 
 - **Model-independent transformations** produce features any model can reuse. They run once, in the feature pipeline, and their output is stored. Here: the hourly forecasts and readings averaged into daily rows, wet hours counted, and yesterday's mean.
 - **Model-dependent transformations** depend on one model and its training data, such as scaling or encoding. They are applied in both the training and the inference pipeline, never stored. Here there are none: XGBoost needs no scaling, and the weekend flag is already 0 or 1.
-- **On-demand transformations** calculate a feature at the moment it is asked for, instead of reading it from a stored table. They are for features that cannot be stored in advance. Here that is the weekend flag. A day's row in `daily_air_quality` is written only after its readings arrive, so the seven days being forecast have no row yet. So when training or inference asks Feast for a day's features, the on-demand view `calendar_v2` works out the weekend flag from that day's date.
+- **On-demand transformations** calculate a feature at the moment it is asked for, instead of reading it from a stored table. Here that is the weekend flag: the seven days being forecast have no stored row yet, so the on-demand view `calendar_v2` works it out from each day's date.
 
 ## Backfill and incremental runs
 
-A **backfill** creates feature data from history, for a new system or to fill a gap. An **incremental** run processes only what is new since the last run. Both should be safe to rerun. Here the backfill writes 730 days, the daily run writes one day, both use the same feature code, and a rerun of a day replaces it.
+A **backfill** creates feature data from history, for a new system or to fill a gap. An **incremental** run processes only what is new since the last run. Here the backfill writes 730 days and the daily run one day, with the same feature code.
+
+Both must be safe to rerun: the daily run upserts on each table's key ([`simulation.py`](../airq/feature/simulation.py)), so a rerun of a day replaces its rows.
 
 ## Data validation on write
 
@@ -55,6 +59,8 @@ Validate data before it is written, because one bad row can break a training or 
 ## Point-in-time correct training data
 
 A model should learn only from what was known at the time. To learn the PM2.5 of a day, it sees the weather forecast made the day before, never anything that came later. Using later information is called **leakage**: it makes a model look better in testing than it will be in real use.
+
+Feast builds training data with a **point-in-time join**. For each requested row, an entity and a time, it takes the latest feature row for that entity whose event time is at or before the requested time and no older than the view's `ttl` (time to live, 12 hours for `weather_v1`). If there is none, the features are left empty.
 
 Each forecast row records the day it was made, so Feast always picks the right one. If that forecast is missing, Feast returns nothing rather than an older one ([`test_point_in_time.py`](../tests/stores/test_point_in_time.py) checks this).
 
@@ -75,11 +81,25 @@ Who does what:
 | Training pipeline ([`train.py`](../airq/training/train.py)) | reads the current snapshot id of both tables before and after Feast reads them, and stops if either changed. It then tags both snapshots `mlflow-<run id>` |
 | MLflow | stores each snapshot id and tag name on the training run, so a model's training data can be found from its run |
 
-Iceberg's maintenance jobs (compaction, snapshot expiry and orphan file removal) never delete a snapshot that a tag points to, or the files it uses. So a run's training data can be read again for as long as its tag exists. Two side effects remain. The tagged files take up space until the tag is removed. And a compaction that commits while training is reading changes the snapshot id, so training stops and has to be run again. This project runs none of these jobs.
+Iceberg's maintenance jobs (compaction, snapshot expiry and orphan file removal) never delete a snapshot that a tag points to, or the files it uses. So a run's training data can be read again for as long as its tag exists, at the cost of the space its files take. This project runs none of these jobs.
+
+## Choosing features
+
+A **feature sweep** decides which features a new model version adds. It starts from the features already in use, adds one candidate at a time, and scores each set with the same model on the same test days. It keeps adding candidates while each one lowers the error by at least 5%, and stops at the first that does not. Here the [sweep](../airq/training/sweep.py) tests the weekend flag, then the PM2.5 of one, two and three days before, and registers no model.
+
+A past reading can only be used if it exists when the forecast is made. On day D, the latest reading is D's own. So a forecast for day D+N can use a reading from N days before it at best. The sweep scores each lead with the reading actually available.
+
+Past readings bring three problems, so they have to improve the forecast clearly to be worth adding:
+
+- **One model per lead.** Each lead would use a reading from a different day, so each would need its own model.
+- **Sensor outages.** A missing reading would stop the forecast, or need a rule to fill it in.
+- **Timing.** Day D's last reading arrives at 00:00 UTC, when the daily run starts, so a late reading would be missed.
 
 ## Model registry, versions and evaluation
 
 Every training run saves its model in MLflow as a new numbered **version** (1, 2, 3 and so on). A version never changes. It keeps its scores (MAE, RMSE, R²), a feature importance plot, which feature set it used, and which table snapshots it was trained on.
+
+Each model is scored against a **baseline** that needs no training, yesterday's measured PM2.5, on the same test days. The test days are the last 20%, split in **time order**, because a random sample would let the model learn from days after the ones it is tested on.
 
 An **alias** is a name pointing at one version:
 - `champion`: the version in use;
@@ -94,6 +114,10 @@ Batch inference runs on a schedule, once a day here. Each run treats one date as
 Every prediction is kept as a row in the Iceberg table `airq.predictions`. A row records the as-of date, the day predicted, how many days ahead that is, and the model version.
 
 When the readings for those days arrive, a **hindcast** compares them with the predictions. It shows how accurate each model was, and how accuracy changes with how far ahead it predicted.
+
+## Backtesting
+
+A **backtest** runs the inference pipeline for each of a range of past dates, as if each date were today. Each run reads only the forecasts issued on its as-of date, so it uses only what was known then. Those days are already measured, so a hindcast scores them straight away. Here `--days` in [`infer.py`](../airq/inference/infer.py) runs one as-of date at a time, ending with `--as-of`. The dates should fall in the test days, never in the days the models were trained on.
 
 ## Drift
 
@@ -110,6 +134,8 @@ Here readings arrive the next day, so the hindcast measures error daily, and the
 A language model cannot see the project's tables. Instead it is given **tools**: named functions it may call. For each question, the model picks a tool and its inputs, the code runs it, and the model writes its answer from the result.
 
 Here the assistant has three tools, over the same queries the Monitoring tab uses.
+
+The loop that passes each tool result back to the model is the **agent**, built here with Strands ([`assistant.py`](../airq/app/assistant.py)).
 
 ## Versioning
 

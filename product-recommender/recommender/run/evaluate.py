@@ -51,7 +51,8 @@ def main() -> None:
         log[[c for c in log.columns if c not in [_PID, _RESPONSE]]].copy(), _UID
     )
     items = _numeric(items, _PID)
-    train, test = train_test_split(log, test_size=0.2, shuffle=False)  # by time
+    # The last 20% of rows. The visit times are random, so this is a random split.
+    train, test = train_test_split(log, test_size=0.2, shuffle=False)
 
     # benchmark() renames the response column to "score" before passing it to Jurity.
     params = {

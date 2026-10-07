@@ -2,6 +2,10 @@
 
 The ideas the [ecommerce-cdc](../README.md) project is built on, each explained from the start and tied to where the project uses it.
 
+## Kafka topics, partitions and offsets
+
+Kafka stores messages in **topics**, each split into **partitions**. Each message has an **offset**, its position in its partition, and may have a **key**, which Kafka uses to choose the partition. Debezium writes each table's changes to a topic of its own, and [`s3-sink.json`](../ecommerce/cdc/s3-sink.json) names each file after a partition and the offset of the file's first message.
+
 ## Change data capture and the write-ahead log
 
 Other systems often need to know what changed in a database, such as a search index or a data lake. **Polling** finds out by querying again and again for rows updated since the last check. It needs an `updated_at` column that every writer keeps right, it sees only the latest value of a row that changed twice between checks, and it never sees a deleted row.
@@ -10,15 +14,31 @@ Other systems often need to know what changed in a database, such as a search in
 
 PostgreSQL writes every change to its **write-ahead log (WAL)** before it changes the table, so it can replay the log after a crash. The WAL is in PostgreSQL's internal format. **Logical decoding** turns it into row changes another program can read. It needs `wal_level=logical`, which odctl's PostgreSQL sets, and an output plugin that decides the format. This project uses `pgoutput`, which Debezium's documentation calls "the standard logical decoding output plug-in in PostgreSQL 10+". It is built into PostgreSQL.
 
+**Logical replication** is PostgreSQL's own way to copy row changes to another database. A subscriber subscribes to a publication, and PostgreSQL decodes the WAL with `pgoutput` and sends the subscriber the changes. **Debezium**, an open-source platform for change data capture, reads the changes in the same way. It writes them to Kafka instead of a database, with the settings in [`source.json`](../ecommerce/cdc/source.json).
+
+## Kafka Connect
+
+**Kafka Connect** runs connectors, so the copying code does not have to be a separate application.
+
+- A **worker** is one Connect process. odctl runs one in distributed mode, which keeps its settings, statuses and offsets in Kafka topics, so a restarted worker carries on.
+- A **connector** is one job. It is created by sending its settings as JSON to the REST API: `PUT /connectors/<name>/config` creates or updates it.
+- A **source connector** copies data into Kafka, and a **sink connector** copies it out. Here Debezium is the source and the Aiven S3 sink is the sink.
+- A **task** does the copying. A connector runs up to `tasks.max` tasks; both here run one.
+- An **offset** records how far a connector has got: a WAL position for Debezium, a position in each partition for the sink. Connect commits offsets every `offset.flush.interval.ms`, one minute by default, which odctl does not change.
+
+The clean-up calls `PUT /connectors/<name>/stop`, then `DELETE /connectors/<name>/offsets`, which Kafka allows only on a stopped connector. Otherwise a new connector with the same name would resume from the old position and skip the [snapshot](#debezium-change-events).
+
 ## Publications and replication slots
 
 A **publication** names the tables whose changes are sent. odctl's `cdc_pub` is created `FOR TABLES IN SCHEMA cdc`, which PostgreSQL's documentation says covers "all tables in the specified list of schemas, including tables created in the future". Debezium's `publication.autocreate.mode` is `disabled`, so it uses `cdc_pub` and never creates its own.
 
 A **replication slot** records how far one reader has got in the WAL. Debezium reads through the slot `ecommerce_cdc`, so after a restart it carries on where it stopped. The cost: PostgreSQL keeps every WAL file the slot has not read, even with no reader connected. odctl's `max_slot_wal_keep_size` is the default, `-1`, with which a slot "may retain an unlimited amount of WAL files". A forgotten slot therefore grows the WAL until the disk is full, and PostgreSQL's documentation says "if a slot is no longer required it should be dropped". The clean-up drops it.
 
+A slot is **active** while a reader is connected to it. PostgreSQL's documentation says dropping an active slot raises an error by default. The slot stays active until the connector's task ends. So `drop_slot` in [`postgres.py`](../ecommerce/stores/postgres.py) checks `pg_replication_slots` once a second for up to 30 seconds, and drops the slot only once it is inactive.
+
 ## Debezium change events
 
-Debezium is a **source connector**: it copies data from a database into Kafka, one topic per table, named `topicPrefix.schemaName.tableName`. The orders table's changes go to `ecommerce.cdc.orders`.
+Debezium is a source connector: it copies data from a database into Kafka, one topic per table, named `topicPrefix.schemaName.tableName`. The orders table's changes go to `ecommerce.cdc.orders`.
 
 A new connector with `snapshot.mode` set to `initial` first reads every existing row (the **snapshot**), then streams each new change from the slot. Here the simulation starts first, so every row written before the connectors are deployed, such as the products and the first 100 users, arrives as a snapshot read.
 
@@ -36,30 +56,21 @@ The key is the row's primary key. Kafka's producer picks the partition "based on
 
 `before` is null in every update here. A table's **replica identity** decides what PostgreSQL logs about the old row. With the default, the old key is sent only "if the update changed data in any of the column(s) that are part of the REPLICA IDENTITY index", and the whole old row only with `REPLICA IDENTITY FULL`. No update here changes an `id`, so no old row is sent. `after` still holds the full new row.
 
-## Kafka Connect
-
-**Kafka Connect** runs connectors, so the copying code does not have to be a separate application.
-
-- A **worker** is one Connect process. odctl runs one in distributed mode, which keeps its settings, statuses and offsets in Kafka topics, so a restarted worker carries on.
-- A **connector** is one job. It is created by sending its settings as JSON to the REST API: `PUT /connectors/<name>/config` creates or updates it.
-- A **task** does the copying. A connector runs up to `tasks.max` tasks; both here run one.
-- An **offset** records how far a connector has got: a WAL position for Debezium, a position in each partition for the sink. Connect commits offsets every `offset.flush.interval.ms`, one minute by default, which odctl does not change.
-
-The clean-up calls `PUT /connectors/<name>/stop`, then `DELETE /connectors/<name>/offsets`, which Kafka allows only on a stopped connector. Otherwise a new connector with the same name would resume from the old position and skip the snapshot.
+Debezium follows each delete event with a **tombstone**: a message with the same key and a null value (`tombstones.on.delete` defaults to `true`). The simulation never deletes a row, so no tombstones appear here.
 
 ## Avro and the schema registry
 
-A **converter** turns each record into bytes when it is written to Kafka. Both connectors use `io.confluent.connect.avro.AvroConverter`. **Avro** is a binary format: a message holds only the values, not the field names, so it is much smaller than JSON, and a reader needs the **schema** to decode it.
+A **converter** turns each record into bytes when it is written to Kafka. Both connectors use `io.confluent.connect.avro.AvroConverter`. **Avro** is a binary format: a message holds only the values, not the field names, so it is much smaller than JSON, and a reader needs the **schema** to decode it. An Avro schema is JSON that lists a record's fields, each with a name and a type.
 
 Schemas are kept in **Karapace**, a schema registry:
 
 - Each schema is stored under a **subject**, by default the topic name plus `-key` or `-value`, such as `ecommerce.cdc.orders-value`.
 - The registry numbers each schema. A message starts with a zero byte and the four-byte **schema id**, then the Avro data, so a reader looks the schema up once by its id.
-- The converter registers schemas itself (`auto.register.schemas` defaults to `true`). If a table's columns change, the new schema becomes a new version of the subject, and the registry checks it against the last one. The default rule, `BACKWARD`, means "consumers using the new schema can read data produced with the last schema": adding an optional field passes, adding a required one fails.
+- The converter registers schemas itself (`auto.register.schemas` defaults to `true`). If a table's columns change, the new schema becomes a new version of the subject, and the registry checks its **compatibility** with the last one. The default rule, `BACKWARD`, means "consumers using the new schema can read data produced with the last schema": adding an optional field passes, adding a required one fails.
 
 ## S3 sink
 
-The Aiven S3 sink reads topics and writes their messages to files. Its README says it "flushes grouped records in one file per `offset.flush.interval.ms` setting for partitions that have received new messages", so each busy partition gets a new file about once a minute.
+SeaweedFS offers the S3 API, so the sink writes to the bucket `odctl-dev` at the endpoint in [`s3-sink.json`](../ecommerce/cdc/s3-sink.json) as it would to Amazon S3. The Aiven S3 sink reads topics and writes their messages to files. Its README says it "flushes grouped records in one file per `offset.flush.interval.ms` setting for partitions that have received new messages", so each busy partition gets a new file about once a minute.
 
 The file name template is `ecommerce-cdc/{{topic}}/{{partition}}-{{start_offset}}.jsonl`, where `start_offset` is "the Kafka offset of the first record in the file". With `format.output.type` set to `jsonl`, each line is one message, with the fields in `format.output.fields`: key, value, offset and timestamp.
 
@@ -67,7 +78,9 @@ The sink reads every topic matching `topics.regex`, so a new table's topic is pi
 
 ## Simulation model
 
-The shop is a **discrete-event simulation (DES)**, built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed; here the clock keeps pace with real time. `build` in [`run.py`](../ecommerce/simulation/run.py) defines the model, and [`config.py`](../ecommerce/core/config.py) holds its values:
+The shop is a **discrete-event simulation (DES)**, built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed. Here the clock keeps pace with real time (`factor=1`), and the tests use `factor=0`, which runs as fast as it can. `build` in [`run.py`](../ecommerce/simulation/run.py) defines the model, and [`config.py`](../ecommerce/core/config.py) holds its values.
+
+dynamic-des is built on SimPy. A **process** is a Python generator that pauses at each `yield` until an event happens, such as a wait ending or a picker coming free. A **resource** has a limited number of slots. A process requests a slot, waits in a queue while none is free, and releases it when done. The model's parts:
 
 | Part | dynamic-des feature | Here |
 |---|---|---|
@@ -78,6 +91,8 @@ The shop is a **discrete-event simulation (DES)**, built with [dynamic-des](http
 | a process of its own | `spawn` | each visit, and each order |
 | live changes | the registry and `KafkaIngress` | any value above, while it runs |
 | writes | `PostgresEgress` | one per table, upserting on `id` |
+
+An **ingress** brings changes from outside into the running model, and an **egress** writes the model's output out. Each `PostgresEgress` upserts with `ON CONFLICT (id) DO UPDATE`.
 
 An order waits for a picker or for its customer's patience to run out, whichever comes first, and is cancelled in the second case. [Step 4](../README.md#step-4-change-the-simulation-while-it-runs) shows what happens with one picker.
 

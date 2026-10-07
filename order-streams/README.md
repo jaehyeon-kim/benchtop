@@ -43,15 +43,19 @@ Steps 3 to 5 need the Avro producer from step 2 running. To start again at any p
 
 ## Environment setup
 
-You need Docker (Docker Desktop, OrbStack or Docker Engine), JDK 17 and odctl. Install odctl with [uv](https://docs.astral.sh/uv/):
+You need Docker (Docker Desktop, OrbStack or Docker Engine), JDK 17 and odctl. Run every command from this folder.
+
+### odctl
+
+Install odctl with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv tool install odctl==0.9.0
 ```
 
-`./gradlew` downloads Gradle on its first run. Run every command from this folder.
+`./gradlew` downloads Gradle on its first run.
 
-Start the services:
+### Services
 
 ```bash
 odctl up kafka-lite
@@ -108,7 +112,7 @@ In Kafka UI:
 ./gradlew :orders-avro-clients:run --args="consumer"     # in a second terminal
 ```
 
-The producer creates the topic `orders-avro` and sends one order a second, like the JSON producer, but in Avro. The order is generated from the schema in [`Order.avsc`](orders-avro-clients/src/main/avro/Order.avsc), which the serializer registers in Karapace under the subject `orders-avro-value` ([serialization](docs/concepts.md#serialization-json-and-avro)).
+The producer creates the topic `orders-avro` and sends one order a second, like the JSON producer, but in Avro. The order is generated from the schema in [`Order.avsc`](orders-avro-clients/src/main/avro/Order.avsc) ([specific and generic records](docs/concepts.md#specific-and-generic-avro-records)), which the serializer registers in Karapace under the subject `orders-avro-value`.
 
 In Kafka UI:
 
@@ -162,11 +166,11 @@ In Kafka UI:
 ./gradlew :orders-stats-flink:run --args="datastream"
 ```
 
-The job creates the topics `orders-avro-kds-stats` and `orders-avro-kds-skipped`, and runs three copies of each operator, one per partition ([Flink](docs/concepts.md#flink-watermarks-and-windows)):
+The job creates the topics `orders-avro-kds-stats` and `orders-avro-kds-skipped`, and runs three copies of each operator, one per partition ([parallelism](docs/concepts.md#flink-parallelism-and-local-execution)):
 
 1. **Read** `orders-avro` from the earliest offset.
-2. **Assign** each order its bid time as its timestamp, with watermarks that trail the largest timestamp by 5 seconds.
-3. **Aggregate** by supplier in 5-second tumbling event-time windows, with an allowed lateness of 5 seconds, and write the results in Avro to `orders-avro-kds-stats`.
+2. **Assign** each order its bid time as its timestamp, with [watermarks](docs/concepts.md#flink-watermarks-and-windows) that trail the largest timestamp by 5 seconds.
+3. **Aggregate** by supplier in 5-second tumbling [event-time](docs/concepts.md#basics) windows, with an allowed lateness of 5 seconds, and write the results in Avro to `orders-avro-kds-stats`.
 4. **Send** late orders to a side output, written as JSON to `orders-avro-kds-skipped`.
 
 The job also prints each result and each late order to the terminal. In Kafka UI, `orders-avro-kds-stats` needs **Value Serde** set to `SchemaRegistry`, and `orders-avro-kds-skipped` holds plain JSON. The skipped topic stays empty unless the producer runs with `DELAY_SECONDS=30`.
@@ -195,7 +199,7 @@ As in step 4, the job prints its results and late orders to the terminal, and Ka
 
 ## Fat JARs
 
-Each application also builds into one JAR that holds all its dependencies, and runs with `java -jar`:
+Each application also builds into one JAR that holds all its dependencies (a fat JAR), and runs with `java -jar`:
 
 ```bash
 ./gradlew shadowJar

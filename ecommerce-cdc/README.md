@@ -26,8 +26,8 @@ The simulation never writes to Kafka. It only writes to its database, and every 
 ### What you will build
 
 1. Run the simulation, which fills the tables and keeps changing them.
-2. Deploy the two connectors. Debezium takes a snapshot of the existing rows, then streams every insert and update to Kafka. The S3 sink saves them as files.
-3. Look at the change events in Kafka UI, their schemas in the schema registry, and the files in SeaweedFS.
+2. Deploy the two [connectors](docs/concepts.md#kafka-connect). Debezium takes a snapshot of the existing rows, then streams every insert and update to Kafka. The S3 sink saves them as files.
+3. Look at the change events in Kafka UI, their schemas in the [schema registry](docs/concepts.md#avro-and-the-schema-registry), and the files in SeaweedFS.
 4. Cut the warehouse's pickers while the simulation runs, and watch cancelled orders appear in the stream.
 
 To start again at any point, `python -m ecommerce.stores.cleanup` removes everything this project has created and keeps the services running. See [Clean up](#clean-up).
@@ -45,15 +45,6 @@ To start again at any point, `python -m ecommerce.stores.cleanup` removes everyt
 | SeaweedFS | an S3-compatible object store for the files |
 | Kafka UI | a web page for the topics, messages, schemas and connectors |
 | [odctl](https://github.com/jaehyeon-kim/odctl) | starts all the services above with Docker Compose |
-
-### Code
-
-The simulation's model, with the dynamic-des feature behind each part, is in [Concepts](docs/concepts.md#simulation-model). The code is in four folders:
-
-- [`ecommerce/core/`](ecommerce/core): the settings ([`config.py`](ecommerce/core/config.py)) and the row models with their bounds ([`models.py`](ecommerce/core/models.py)).
-- [`ecommerce/simulation/`](ecommerce/simulation): the shop's rules as plain functions ([`shop.py`](ecommerce/simulation/shop.py)), the fixed data: distribution centres, cities and products ([`catalogue.py`](ecommerce/simulation/catalogue.py)), the dynamic-des model ([`run.py`](ecommerce/simulation/run.py)) and live changes ([`control.py`](ecommerce/simulation/control.py)).
-- [`ecommerce/cdc/`](ecommerce/cdc): the two connectors' settings as JSON files, and [`connectors.py`](ecommerce/cdc/connectors.py), which deploys them.
-- [`ecommerce/stores/`](ecommerce/stores): PostgreSQL, Kafka, Kafka Connect and S3, each with the function that deletes this project's objects, and [`cleanup.py`](ecommerce/stores/cleanup.py), which calls them in order.
 
 ## Environment setup
 
@@ -96,7 +87,7 @@ odctl up postgres kafka-lite storage
 
 odctl starts three profiles:
 
-- `postgres`: PostgreSQL, already set up for CDC. It runs with `wal_level=logical`, and has the schema `cdc` with the publication `cdc_pub`, which covers every table in that schema. [Concepts](docs/concepts.md#change-data-capture-and-the-write-ahead-log) explains both.
+- `postgres`: PostgreSQL, already set up for CDC. It runs with `wal_level=logical`, and has the schema `cdc` with the publication `cdc_pub`, which covers every table in that schema.
 - `kafka-lite`: one Kafka broker, Kafka Connect with the Debezium and Aiven S3 connectors, Karapace and Kafka UI.
 - `storage`: SeaweedFS.
 
@@ -107,7 +98,7 @@ The web UIs:
 
 [`config.py`](ecommerce/core/config.py) sets the addresses of PostgreSQL, Kafka, Connect, Karapace and SeaweedFS, so there is nothing to configure.
 
-## Step 1: Run the simulation
+## Step 1: run the simulation
 
 ```bash
 python -m ecommerce.simulation.run --minutes 16     # or leave out --minutes, and stop with Ctrl + C
@@ -115,21 +106,23 @@ python -m ecommerce.simulation.run --minutes 16     # or leave out --minutes, an
 
 It creates the six tables in the `cdc` schema if they are missing, and writes the 10 distribution centres, the 260 products and 100 users. It then runs in real time. With the default parameters it places about 18 orders a minute. Each order is then updated when it ships and when it is delivered, and one in ten is later returned. `--seed <n>` makes every random choice repeat. [Data](docs/data.md#tables) lists every table's columns.
 
+The model is in [`run.py`](ecommerce/simulation/run.py), and [Concepts](docs/concepts.md#simulation-model) describes it. The shop's rules are plain functions in [`shop.py`](ecommerce/simulation/shop.py), and the distribution centres, cities and products are in [`catalogue.py`](ecommerce/simulation/catalogue.py). Each row is built from a model in [`models.py`](ecommerce/core/models.py), with its bounds.
+
 Leave it running, and use a second terminal for the next steps.
 
-## Step 2: Deploy the connectors
+## Step 2: deploy the connectors
 
-A connector is a job that Kafka Connect runs: a source connector copies data into Kafka, and a sink connector copies it out. [Concepts](docs/concepts.md#kafka-connect) explains workers, tasks and offsets.
+A connector is a job that Kafka Connect runs: a source connector copies data into Kafka, and a sink connector copies it out.
 
 ```bash
 python -m ecommerce.cdc.connectors
 ```
 
-It sends [`source.json`](ecommerce/cdc/source.json) and [`s3-sink.json`](ecommerce/cdc/s3-sink.json) to Connect's REST API, which creates each connector, or updates it if it exists.
+[`connectors.py`](ecommerce/cdc/connectors.py) sends [`source.json`](ecommerce/cdc/source.json) and [`s3-sink.json`](ecommerce/cdc/s3-sink.json) to Connect's REST API, which creates each connector, or updates it if it exists.
 
-[`source.json`](ecommerce/cdc/source.json) tells Debezium to read the six tables through the publication `cdc_pub` and its own replication slot, `ecommerce_cdc` ([Concepts](docs/concepts.md#publications-and-replication-slots)). It takes a snapshot of the existing rows, then streams each new change to `ecommerce.cdc.<table>`, in Avro ([Concepts](docs/concepts.md#debezium-change-events)).
+[`source.json`](ecommerce/cdc/source.json) tells Debezium to read the six tables through the publication `cdc_pub` and its own replication slot, `ecommerce_cdc` ([Concepts](docs/concepts.md#publications-and-replication-slots)). It takes a snapshot of the existing rows, then streams each new change to `ecommerce.cdc.<table>`, in Avro.
 
-[`s3-sink.json`](ecommerce/cdc/s3-sink.json) tells the S3 sink to read every `ecommerce.cdc.*` topic, decode each message with its schema, and write JSON lines files to `odctl-dev/ecommerce-cdc/<topic>/` ([Concepts](docs/concepts.md#s3-sink)).
+[`s3-sink.json`](ecommerce/cdc/s3-sink.json) tells the S3 sink to read every `ecommerce.cdc.*` topic, decode each message with its schema, and write JSON lines files to `odctl-dev/ecommerce-cdc/<topic>/`.
 
 Check that each connector and its task show `RUNNING`:
 
@@ -142,7 +135,7 @@ Kafka UI shows the same under **Kafka Connect**, with the topics each connector 
 
 ![Kafka UI listing the Debezium source and the S3 sink, both running](images/kafka-ui-connectors.png)
 
-## Step 3: Look at the changes
+## Step 3: look at the changes
 
 ### Topics
 
@@ -158,7 +151,7 @@ Open **Schema Registry** and search for `ecommerce`. Each topic has a key subjec
 
 ![Kafka UI's schema registry page listing a key and a value subject for each ecommerce.cdc topic](images/kafka-ui-schemas.png)
 
-Kafka UI and the S3 sink look each message's schema up here to decode it ([Concepts](docs/concepts.md#avro-and-the-schema-registry)).
+Kafka UI and the S3 sink look each message's schema up here to decode it.
 
 ### Change events
 
@@ -208,7 +201,7 @@ Some `source` and time fields are left out. `ts_ms` minus `source.ts_ms` shows D
 
 ### Files
 
-In the SeaweedFS file browser, open `buckets/odctl-dev/ecommerce-cdc/`. There is a folder per topic. Each file is named after its partition and the offset of its first message, so `0-41.jsonl` holds partition 0 from offset 41:
+In the SeaweedFS file browser, open `buckets/odctl-dev/ecommerce-cdc/`. There is a folder per topic. Each file is named after its [partition and the offset](docs/concepts.md#kafka-topics-partitions-and-offsets) of its first message, so `0-41.jsonl` holds partition 0 from offset 41:
 
 ![SeaweedFS file browser listing the JSON lines files the sink wrote for the orders topic](images/seaweedfs-files.png)
 
@@ -220,9 +213,9 @@ Each line is one change event, with its key, offset and time. The first line of 
 
 Debezium creates `ecommerce.cdc.orders` only when the first order is placed, after the sink has started. In a test run with the consumer's default metadata refresh of five minutes, the first `orders` file took about six minutes. With [`s3-sink.json`](ecommerce/cdc/s3-sink.json) setting it to 30 seconds, it took about a minute ([Concepts](docs/concepts.md#s3-sink)).
 
-## Step 4: Change the simulation while it runs
+## Step 4: change the simulation while it runs
 
-The simulation reads parameter changes from the Kafka topic `ecommerce-control`, and uses each new value from the next time it draws one. With the simulation and both connectors running, cut the pickers from three to one:
+The simulation reads parameter changes from the Kafka topic `ecommerce-control`, and uses each new value from the next time it draws one. [`control.py`](ecommerce/simulation/control.py) sends the changes. With the simulation and both connectors running, cut the pickers from three to one:
 
 ```bash
 python -m ecommerce.simulation.control ecommerce.resources.pickers.current_cap 1
@@ -261,10 +254,10 @@ They check the order statuses, the catalogue, the row bounds, the connector sett
 
 ## Clean up
 
-`python -m ecommerce.stores.cleanup` removes everything this project has created, and keeps the services running:
+`python -m ecommerce.stores.cleanup` removes everything this project has created, and keeps the services running. [`cleanup.py`](ecommerce/stores/cleanup.py) calls the delete function of each store in [`ecommerce/stores/`](ecommerce/stores), in this order:
 
 - **Connectors:** stops both, deletes their stored offsets, so a new source connector takes a fresh snapshot, then deletes them.
-- **Replication slot:** drops `ecommerce_cdc`, once the connector has let go of it. A slot left behind makes PostgreSQL keep its log forever.
+- **Replication slot:** drops `ecommerce_cdc`, once the connector has disconnected from it. A slot left behind makes PostgreSQL keep its log forever.
 - **Tables:** drops the six tables in `cdc`.
 - **Kafka:** deletes the topics starting with `ecommerce.`, and `ecommerce-control`.
 - **Schema registry:** deletes the 12 `ecommerce.cdc.*` subjects.

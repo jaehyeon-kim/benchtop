@@ -25,20 +25,20 @@ They share only two stores. The **feature store** holds the features, so trainin
 
 **Step 1: v1, end to end**
 
-1. Backfill two years of history, up to yesterday.
+1. [Backfill](docs/concepts.md#backfill-and-incremental-runs) two years of history, up to yesterday.
 2. Register v1's features.
-3. Train v1. It becomes the model in use, called the champion.
+3. Train v1. It becomes the model in use, called the [champion](docs/concepts.md#model-registry-versions-and-evaluation).
 4. Forecast the next seven days.
 5. Load today's data, then forecast again.
-6. Do the same for tomorrow.
+6. Load tomorrow's data, then forecast again. ([How❓](#load-a-day-and-forecast-again))
 7. Score v1's forecasts against what was measured.
 
 **Step 2: v2, improving the model with more features**
 
-1. Run a feature sweep. It chooses a weekend flag and rejects past PM2.5 readings.
+1. Run a [feature sweep](docs/concepts.md#choosing-features). It chooses a weekend flag and rejects past PM2.5 readings.
 2. Register v2's features.
 3. Train v2. It becomes the challenger, which predicts beside the champion.
-4. Backtest both models over the last 60 days.
+4. [Backtest](docs/concepts.md#backtesting) both models over the last 60 days.
 5. Compare their errors.
 6. Promote v2 to champion.
 
@@ -253,7 +253,7 @@ LIMIT 7;
 
 ### Register v1's features
 
-Feast is the feature store. It serves features to training and inference through a **feature view**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in [`feature_store.py`](airq/stores/feature_store.py). Register it once, and again after changing it:
+Feast is the feature store. It serves features to training and inference through a **[feature view](docs/concepts.md#feature-groups-feature-views-entities-and-labels)**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in [`feature_store.py`](airq/stores/feature_store.py). Register it once, and again after changing it:
 
 ```bash
 python -m airq.stores.feature_store --version v1
@@ -277,11 +277,11 @@ LIMIT 7;
 
 The training pipeline trains v1 and registers it in MLflow as a new version of the model `airq_pm25`:
 
-- **Data:** each day's measured PM2.5, with the forecast issued the day before (lead 1).
+- **Data:** each day's measured PM2.5, with the [forecast issued the day before](docs/concepts.md#point-in-time-correct-training-data) (lead 1).
 - **Test days:** the last 20% of days are held out. The model trains on the earlier days, so it never sees the days it is tested on.
 - **Scores:** MAE, RMSE and R² for v1 and for the baseline, on the same test days. MAE, the mean absolute error, is how far a prediction is from the measured value, on average. The run also logs a feature importance plot.
 - **Alias:** an alias is a name that points at one version. The first version registered becomes the `champion`, which the inference pipeline uses. Training v1 again makes the new version the champion.
-- **Reproducibility:** the run records which snapshot of each Iceberg table it read, and keeps those snapshots, so the same training data can be read again later.
+- **Reproducibility:** the run records which [snapshot](docs/concepts.md#reproducible-training-data) of each Iceberg table it read, and keeps those snapshots, so the same training data can be read again later.
 
 ```bash
 python -m airq.training.train --version v1
@@ -329,7 +329,7 @@ A day can be written as `YYYY-MM-DD` or as people say it: `today`, `yesterday`, 
 
 ### Score the forecasts
 
-The hindcast compares the predictions with the PM2.5 measured since, and reports each model version's mean absolute error by lead:
+The [hindcast](docs/concepts.md#batch-inference-and-hindcasts) compares the predictions with the PM2.5 measured since, and reports each model version's mean absolute error by lead:
 
 ```bash
 python -m airq.inference.infer --hindcast
@@ -361,7 +361,7 @@ v2 improves v1 with more features. This step finds which features help, adds the
 
 ### Choose the features
 
-The feature sweep tests which daily features to add to the weather. It adds one candidate at a time, and scores each set with the same model on the same days. It records its results in MLflow as a run named `feature-sweep`, and registers no model:
+The feature sweep tests which daily features to add to the weather. It records its results in MLflow as a run named `feature-sweep`, and registers no model:
 
 ```bash
 python -m airq.training.sweep
@@ -385,20 +385,14 @@ The sweep keeps adding features while each one lowers the error by at least 5%. 
 
 #### Past PM2.5 readings
 
-A past reading can only be used if it exists when the forecast is made. On day D, the latest reading is D's own. So a forecast for day D+N can use a reading from N days before it at best. The sweep scores each lead with the reading that is actually available:
+A forecast for day D+N can use a reading from N days before it at best. The sweep scores each lead with the reading that is actually available:
 
 | Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
 | without the reading | 0.76 | 0.83 | 0.86 | 0.85 | 0.93 | 0.96 | 0.94 |
 | with the reading | 0.77 | 0.81 | 0.87 | 0.82 | 0.94 | 0.88 | 0.95 |
 
-The reading moves the error by 0.08 at most, up at some leads and down at others, with no consistent gain. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new.
-
-Leaving past readings out also avoids three problems:
-
-- **One model per lead.** Each lead would use a reading from a different day, so each would need its own model.
-- **Sensor outages.** A missing reading would stop the forecast, or need a rule to fill it in.
-- **Timing.** Day D's last reading arrives at 00:00 UTC, when the daily run starts, so a late reading would be missed.
+The reading moves the error by 0.08 at most, up at some leads and down at others, with no consistent gain. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new. Leaving past readings out also avoids needing one model per lead, and a forecast that a missing or late reading would stop.
 
 ![MLflow showing the feature-sweep run: the MAE of each feature set, and the tag chosen: weather+weekend](images/mlflow-feature-sweep.png)
 
@@ -421,7 +415,7 @@ The two views get their values in different ways:
 
 The weekend flag has to be computed on demand, because inference predicts days that have no stored row yet. [Concepts](docs/concepts.md#three-kinds-of-data-transformation) explains why.
 
-Register v2's views. `weather_v1` is unchanged, so v1 keeps working:
+Register v2's views. `weather_v1` is [unchanged](docs/concepts.md#versioning), so v1 keeps working:
 
 ```bash
 python -m airq.stores.feature_store --version v2
@@ -462,8 +456,6 @@ v1's error is well below the baseline's. PM2.5 follows the weather, and the fore
 
 v2's error is less than half of v1's. The simulation raises PM2.5 on weekdays, from traffic. The weather cannot show that, but the weekend flag can.
 
-The test days are the last ones, not a random sample. A real forecast only predicts days after the ones it learnt from, and only a split in time order tests that.
-
 #### Error by days ahead
 
 The backtest predicts seven days ahead from each of 60 past dates. All 60 fall inside the held-out test days, so neither model trained on them. Over the last 30 measured days:
@@ -486,11 +478,11 @@ python -m airq.inference.infer --as-of tomorrow --days 2       # forecast as of 
 
 A promotion carries over to later training runs: training v2 again keeps it the champion, and training v1 again makes the new v1 the challenger.
 
-## Step 3: Monitoring and assistant
+## Step 3: monitoring and assistant
 
 One web app, built with [NiceGUI](https://nicegui.io/), a Python framework that serves a web page and the code behind it from one process. It has two tabs:
 
-- **Monitoring:** the forecast against what was measured, and how accurate each model has been.
+- **Monitoring:** the forecast against what was measured, and how accurate each model has been. A rising error is a sign of [drift](docs/concepts.md#drift).
 - **Assistant:** a chat that answers questions about the forecast, such as "what is the forecast for tomorrow?".
 
 ![The app's two tabs, the assistant, the local model and the shared queries over Iceberg and MLflow](images/app.png)

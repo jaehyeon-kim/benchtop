@@ -50,7 +50,7 @@ You need Docker (Docker Desktop, OrbStack or Docker Engine), JDK 17 and odctl. R
 Install odctl with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install odctl==0.9.0
+uv tool install "odctl>=1.0,<2"
 ```
 
 `./gradlew` downloads Gradle on its first run.

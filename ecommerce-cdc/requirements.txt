@@ -2,5 +2,5 @@ dynamic-des[postgres,kafka]>=0.15.0
 faker==40.40.0
 kafka-python==3.0.11
 boto3==1.43.105
-odctl==0.9.0
+odctl>=1.0,<2
 pytest==9.1.1

@@ -616,7 +616,7 @@ python -m airq.stores.model_registry promote
 
 If a DAG is missing, `docker exec airflow airflow dags list-import-errors` shows why.
 
-Each command also prints OpenTelemetry warnings and errors, because odctl turns on Airflow's metrics without starting the service that collects them. They do no harm. To hide them, add `-e AIRFLOW__METRICS__OTEL_ON=False` after `docker exec`.
+Each command may also print a line about connecting to the OpenTelemetry Collector, because odctl turns on Airflow's metrics. It does no harm. To hide it, add `-e AIRFLOW__METRICS__OTEL_ON=False` after `docker exec`.
 
 ## Tests
 

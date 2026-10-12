@@ -59,28 +59,38 @@ A sigmoid, $\frac{1}{1 + e^{-s}}$ for a score $s$, turns the score into a chance
 
 ## LinUCB
 
-LinUCB keeps one linear model per product $a$, made of two values:
+LinUCB keeps one small linear model per product. For each visit it scores every product and shows the five with the highest scores.
 
-- $A_a$, a 15 by 15 matrix, records **exposure**: the contexts the product has been shown in.
-- $b_a$, 15 numbers, records **success**: the contexts the product was clicked in.
+**Score.** For a visit with context $x$, product $a$'s score is:
 
-Both start empty: $A_a = \lambda I$, the identity matrix scaled by $\lambda$, and $b_a = 0$. MABWiser uses $\lambda = 1$, so $A_a$ starts as the identity. Each time the product is shown in context $x$ with reward $r$, 1 for a click and 0 for none, both are updated:
+$$
+\text{score}_a = \underbrace{x^\top \theta_a}_{\text{exploitation}} + \underbrace{\alpha \sqrt{x^\top A_a^{-1} x}}_{\text{exploration}}, \quad \text{where } \theta_a = A_a^{-1} b_a
+$$
+
+where:
+
+- $x$ is the [context vector](#features-and-the-context-vector), 15 numbers;
+- $A_a$, a 15 by 15 matrix, records **exposure**, the contexts the product has been shown in;
+- $b_a$, a vector of 15 numbers, records **success**, the contexts the product was clicked in;
+- $\theta_a$ is the model's weights, one for each of the 15 context numbers;
+- $x^\top \theta_a$ is the predicted reward, the **exploitation** part. It is high when $x$ looks like the contexts that led to clicks;
+- $\alpha \sqrt{x^\top A_a^{-1} x}$ is the **upper confidence bound**, the **exploration** part. It is small for contexts the product has often been shown in, where $A_a$ is large, and large for contexts it has rarely been shown in, so the product gets tried;
+- $\alpha$ is a **hyperparameter**, a setting chosen rather than learned. A larger $\alpha$ makes exploration count for more. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
+
+**Update.** Each time product $a$ is shown in context $x$ and gets reward $r$, its model is updated:
 
 $$
 A_a \leftarrow A_a + x x^\top \qquad b_a \leftarrow b_a + r x
 $$
 
-$A_a$ grows in the directions of the contexts the product has been shown in, and $b_a$ grows only when the product was clicked. These are the two sums of a **ridge regression**, a linear regression that adds $\lambda I$ to keep its weights small. Its weights are $\theta_a = A_a^{-1} b_a$, and a product's score for context $x$ is:
+where:
 
-$$
-\text{score}_a = x^\top \theta_a + \alpha \sqrt{x^\top A_a^{-1} x}
-$$
+- $r$ is the reward, 1 for a click and 0 for none, so $b_a$ grows only on a click;
+- $A_a$ starts as $\lambda I$, the identity matrix scaled by $\lambda$, and $b_a$ starts at 0. MABWiser uses $\lambda = 1$.
 
-- **Exploitation,** $x^\top \theta_a$: the predicted reward. It is high when $x$ looks like the contexts that led to clicks.
-- **Exploration,** $\alpha \sqrt{x^\top A_a^{-1} x}$: the **upper confidence bound**, a bonus for uncertainty. For a context the product has often been shown in, $A_a$ is large in that direction, $A_a^{-1}$ small, and the bonus small, so the score relies on the prediction. For a context it has rarely or never been shown in, $A_a$ is still close to the identity, so the bonus is large and the product gets tried.
-- $\alpha$ is a **hyperparameter**, a setting chosen before training rather than learned. A larger $\alpha$ makes exploration count for more. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
+$A_a$ and $b_a$ are the two sums of a **ridge regression**, a linear regression that adds $\lambda I$ to keep its weights small, and $\theta_a$ is its solution.
 
-LinUCB shows the five highest scores. The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). In Part 2 the [Flink job](#flink-job) makes the same updates in Kotlin and stores $A_a^{-1}$ as `A_inv`, and the live client scores with the same formula in `bandit.score`.
+The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). In Part 2 the [Flink job](#flink-job) makes the same updates in Kotlin and stores $A_a^{-1}$ as `A_inv`, and the live client scores with the same formula in `bandit.score`.
 
 ## Online learning
 

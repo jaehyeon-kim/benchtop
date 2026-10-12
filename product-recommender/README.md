@@ -16,7 +16,7 @@ More detail is in two documents:
 
 ## Architecture
 
-The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. So it can recommend to a first-time visitor, which avoids the [cold-start problem](docs/concepts.md#cold-start). The algorithm is **LinUCB**, one small linear model per product. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden ground truth decides each click, so there is a pattern to find.
+The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. So it can recommend to a first-time visitor, which avoids the [cold-start problem](docs/concepts.md#cold-start). On every visit it balances **exploitation**, showing the products it expects to be clicked, and **exploration**, trying products it knows little about to learn whether they are better ([Bandits](docs/concepts.md#bandits)). The algorithm is **LinUCB**, one small linear model per product, which adds a bonus for uncertain products so that they get explored. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden ground truth decides each click, so there is a pattern to find.
 
 ### What you will build
 
@@ -155,7 +155,7 @@ LinTS           0.640798      0.211538     0.008527  0.042636
 ClustersTS      0.550505      0.153846     0.004651  0.023256
 ```
 
-LinUCB is chosen. Its picks are clicked about twice as often as random picks (`CTR(score)@5` 20.5% against 10.2%), and it ranks the clicked products high (`AUC(score)@5` 0.86). LinGreedy ranks well, but its picks are rarely clicked, and LinTS is clicked often, but ranks poorly. Each score rests on few visits, so small differences can be chance.
+LinUCB is chosen. Its picks are clicked about twice as often as random picks (`CTR(score)@5` 20.5% against 10.2%), and it ranks the clicked products high (`AUC(score)@5` 0.86). LinGreedy ranks well, but its picks are rarely clicked, because it explores only at random and keeps showing the products it learned first, and LinTS is clicked often, but ranks poorly. Each score rests on few visits, so small differences can be chance.
 
 [Concepts](docs/concepts.md#offline-policy-evaluation) explains how the visits are scored, what each column means and how each policy picks.
 

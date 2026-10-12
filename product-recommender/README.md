@@ -25,7 +25,7 @@ The recommender is a **contextual bandit**: for each visit it shows five product
 ![Data generation, feature engineering and history simulation build the history; the offline policy evaluation selects LinUCB, which the local simulation trains on the history and then runs](images/part-1.png)
 
 1. **Data generation:** create 1,000 users with Faker, beside the 200 products in `data/products.csv`.
-2. **Feature engineering:** turn each product's name and description into numbers with TextWiser, and encode and scale the user fields, so every user and product is a feature vector.
+2. **Feature engineering:** turn each product's name and description into numbers with TextWiser, and encode and scale the user fields. The bandit sees each visit as the [context vector](docs/concepts.md#features-and-the-context-vector) $x$: 15 numbers, the user's 10 features and 5 time flags. The product features are not part of it; only the ground truth reads them.
 3. **History simulation:** simulate 10,000 past visits, each a random user shown a random product, with the [ground truth](docs/concepts.md#ground-truth) deciding the click. This history is `training_log.csv`.
 4. **Offline policy evaluation:** replay the history to compare six recommenders, and select LinUCB.
 5. **Local simulation:** train LinUCB on the history, then run 30 simulated visits. For each visit it recommends five products and learns from the click.

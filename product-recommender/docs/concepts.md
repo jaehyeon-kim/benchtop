@@ -78,7 +78,7 @@ $$
 
 - **Exploitation,** $x^\top \theta_a$: the predicted reward. It is high when $x$ looks like the contexts that led to clicks.
 - **Exploration,** $\alpha \sqrt{x^\top A_a^{-1} x}$: the **upper confidence bound**, a bonus for uncertainty. For a context the product has often been shown in, $A_a$ is large in that direction, $A_a^{-1}$ small, and the bonus small, so the score relies on the prediction. For a context it has rarely or never been shown in, $A_a$ is still close to the identity, so the bonus is large and the product gets tried.
-- $\alpha$ sets the bonus's weight. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
+- $\alpha$ is a **hyperparameter**, a setting chosen before training rather than learned. A larger $\alpha$ makes exploration count for more. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
 
 LinUCB shows the five highest scores. The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). In Part 2 the [Flink job](#flink-job) makes the same updates in Kotlin and stores $A_a^{-1}$ as `A_inv`, and the live client scores with the same formula in `bandit.score`.
 

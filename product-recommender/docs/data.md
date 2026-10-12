@@ -42,7 +42,7 @@ Every file, topic and key the [product-recommender](../README.md) steps read and
 
 [Concepts](concepts.md#features-and-the-context-vector) explains each transformation.
 
-## Step 2
+## Part 2
 
 | Where | What |
 |---|---|
@@ -50,3 +50,4 @@ Every file, topic and key the [product-recommender](../README.md) steps read and
 | Kafka topic `feedback-events` | one Avro event per visit, keyed by product: `event_id`, `product_id`, `reward` (1 or 0), `context_vector` (the 15 numbers) and `timestamp` (the visit time, in milliseconds) |
 | schema registry subject `feedback-events-value` | the event's Avro schema |
 | Valkey keys `linucb:<product id>` | each product's model as JSON: `A_inv`, 15 by 15, and `b`, 15 numbers |
+| `s3://flink-checkpoints/2.x/` | the Flink job's checkpoints, saved every 10 seconds, at the location odctl's Flink configuration sets |

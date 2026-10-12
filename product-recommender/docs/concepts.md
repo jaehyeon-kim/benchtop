@@ -42,11 +42,11 @@ A model needs numbers, so [`features.py`](../recommender/data/features.py) turns
 - **Product text** becomes 10 numbers, `txt_0` to `txt_9`: TextWiser weights the words with TF-IDF and reduces them to 10 dimensions with SVD.
 - **Visit time** becomes five flags: `is_morning` (06:00 to 12:00), `is_afternoon` (12:00 to 18:00), `is_evening` (18:00 to 24:00), `is_weekend` and `is_weekday`.
 
-The fitted transformations are saved, so a new user gets the same ones. The **context vector** `x` the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the hidden formula reads the product features.
+The fitted transformations are saved, so a new user gets the same ones. The **context vector** `x` the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the ground truth reads the product features.
 
-## Hidden click formula
+## Ground truth
 
-`click_probability` in [`simulation.py`](../recommender/engine/simulation.py) decides the simulated clicks, and the bandit never sees it. It starts from a score of −2.5 and applies four rules:
+`click_probability` in [`simulation.py`](../recommender/engine/simulation.py) decides the simulated clicks. It is the simulation's **ground truth**, and the bandit never sees it. It starts from a score of −2.5 and applies four rules:
 
 | Rule | When | Change |
 |---|---|---|
@@ -130,7 +130,7 @@ Four of LinUCB's test visits, from the run with the default seed, 1237:
 | 8003 | weekend evening | Dim Sims | yes | no | skipped |
 | 8024 | weekday morning | Strawberry Milkshake | yes | no | skipped |
 
-On weekend evenings LinUCB's five are mostly pizzas, and on weekday mornings they include coffees, as the [hidden click formula](#hidden-click-formula) rewards. Across the 2,000 test visits, 44 are kept and 9 of those were clicked, so its `CTR(score)@5` is 9 / 44 = 20.5%.
+On weekend evenings LinUCB's five are mostly pizzas, and on weekday mornings they include coffees, as the [ground truth](#ground-truth) rewards. Across the 2,000 test visits, 44 are kept and 9 of those were clicked, so its `CTR(score)@5` is 9 / 44 = 20.5%.
 
 ### Support and uncertainty
 
@@ -158,7 +158,7 @@ The number of visits a score is based on is its **support**. A click rate p meas
 
 ## Splitting serving from training
 
-One process that recommends and learns does not scale: the next user waits while it learns, and copies of it would learn different models. Step 2 splits the work:
+One process that recommends and learns does not scale: the next user waits while it learns, and copies of it would learn different models. Part 2 splits the work:
 
 - **Serving**, the live client, keeps nothing between visits: it reads the models, scores and sends the result. So copies of it could run side by side.
 - **Training**, the Flink job, holds every product's `A` and `b` and updates them.
@@ -167,7 +167,7 @@ One process that recommends and learns does not scale: the next user waits while
 
 The cost is that the client ranks with models a few seconds old.
 
-This makes Step 2 an **event-driven** system: the client writes an **event**, a record of something that happened, and the Flink job reacts to it. Neither calls the other.
+This makes Part 2 an **event-driven** system: the client writes an **event**, a record of something that happened, and the Flink job reacts to it. Neither calls the other.
 
 ## Feedback events
 

@@ -16,29 +16,31 @@ More detail is in two documents:
 
 ## Architecture
 
-The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. So it can recommend to a first-time visitor, which avoids the [cold-start problem](docs/concepts.md#cold-start). The algorithm is **LinUCB**, one small linear model per product. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden formula decides each click, so there is a pattern to find.
+The recommender is a **contextual bandit**: for each visit it shows five products, sees whether one is clicked, and learns from what is known about the visit, such as the user's age and the time of day. So it can recommend to a first-time visitor, which avoids the [cold-start problem](docs/concepts.md#cold-start). The algorithm is **LinUCB**, one small linear model per product. [Concepts](docs/concepts.md#bandits) explains both from the start. The users and clicks are simulated, and a hidden ground truth decides each click, so there is a pattern to find.
 
 ### What you will build
 
-**Step 1: a prototype in one Python process**
+**Part 1: a prototype in one Python process**
 
 ![Data generation, feature engineering and history simulation build the history; the offline policy evaluation selects LinUCB, which the local simulation trains on the history and then runs](images/part-1.png)
 
-1. Generate 1,000 users, the features of 200 products, and a history of 10,000 past visits.
-2. Compare six recommenders on that history, and pick LinUCB.
-3. Run LinUCB for 30 simulated visits, learning after each one.
+1. **Data generation:** create 1,000 users with Faker, beside the 200 products in `data/products.csv`.
+2. **Feature engineering:** turn each product's name and description into numbers with TextWiser, and encode and scale the user fields, so every user and product is a feature vector.
+3. **History simulation:** simulate 10,000 past visits, each a random user shown a random product, with the [ground truth](docs/concepts.md#ground-truth) deciding the click. This history is `training_log.csv`.
+4. **Offline policy evaluation:** replay the history to compare six recommenders, and select LinUCB.
+5. **Local simulation:** train LinUCB on the history, then run 30 simulated visits. For each visit it recommends five products and learns from the click.
 
-**Step 2: an event-driven system**
+**Part 2: an event-driven system**
 
 ![The Flink job trains the models on the history in SeaweedFS first, then on the feedback the live client sends to Kafka, and writes them to Valkey for the client to read](images/part-2.png)
 
-1. Build the Flink job and submit it. It trains the models on the history first.
-2. Run the live client. It recommends from the models in Valkey and sends each result to Kafka.
-3. Watch the Flink job pick up the results and write the updated models back.
+1. **Warm start:** `submit-job.sh` uploads the history to SeaweedFS and submits the Flink job. The job reads the history first and trains one LinUCB model per product, which it writes to Valkey every 5 seconds.
+2. **Live serving:** once the warm start has finished, the live client serves simulated visits. For each one it ranks the products with the models in Valkey, shows five, and sends the result, a click or not, to the Kafka topic `feedback-events`.
+3. **Live training:** after the history, the Flink job reads the topic, updates each product's model from every result and writes it back to Valkey, so the next visit uses the updated models.
 
-Step 1 needs no services. Step 2 runs them with odctl.
+Part 1 needs no services. Part 2 runs them with odctl.
 
-To start again at any point, `python -m recommender.stores.cleanup` removes what Step 2 wrote to the services and keeps them running. See [Clean up](#clean-up).
+To start again at any point, `python -m recommender.stores.cleanup` removes what Part 2 wrote to the services and keeps them running. See [Clean up](#clean-up).
 
 ### Tools
 
@@ -70,7 +72,7 @@ uv pip install -r requirements.txt   # includes the odctl command
 
 ### Services
 
-Step 1 needs none of the services. Step 2 uses Kafka, Flink and Valkey:
+Part 1 needs none of the services. Part 2 uses Kafka, Flink and Valkey:
 
 ```bash
 odctl up kafka-lite flink-full valkey   # Kafka, Flink with 3 TaskManagers, and Valkey
@@ -110,7 +112,7 @@ The web UIs:
 - Kafka UI: http://127.0.0.1:8086
 - SeaweedFS file browser: http://127.0.0.1:8889
 
-## Step 1: prototype in Python
+## Part 1: prototype in Python
 
 These steps need none of the services. Each accepts `--seed`, which defaults to 1237. The same seed always gives the same output, so your run matches the output below.
 
@@ -124,7 +126,7 @@ It writes three things to `data/`, listed in [Data](docs/data.md):
 
 - **Users:** 1,000 users, each with an age, a gender, a Melbourne postal area and a traffic source.
 - **Features:** each user and product as numbers, which [Concepts](docs/concepts.md#features-and-the-context-vector) explains.
-- **History:** 10,000 past visits, each a random user shown a random product, with the [hidden click formula](docs/concepts.md#hidden-click-formula) deciding the click.
+- **History:** 10,000 past visits, each a random user shown a random product, with the [ground truth](docs/concepts.md#ground-truth) deciding the click.
 
 The last lines of its output:
 
@@ -174,9 +176,9 @@ User 0508 (64 yo) @ Tue 12:41 -> Recs: [165, 087, 026, 171, 037] -> Clicked: 165
 
 Visit 21 is on a Tuesday morning, and all five recommendations are coffees, products 189 to 194. Visit 30 is on the same Tuesday, 41 minutes after the morning ends at 12:00, and no coffee is shown. The time of day is part of the context, and the history taught it that coffee is clicked in the morning. Across the 30 visits, 16 end in a click, 53%, against 13.65% at random. [Concepts](docs/concepts.md#linucb) explains how LinUCB scores.
 
-## Step 2: event-driven system
+## Part 2: event-driven system
 
-Step 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serving-from-training)):
+Part 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serving-from-training)):
 
 - **Serving:** `python -m recommender.run.live` reads every product's model from Valkey, recommends the five highest-scoring products, and sends the visit's result to the Kafka topic `feedback-events`.
 - **Training:** the Flink job `RecommenderParameterUpdate` reads the history, then every feedback event. Every 5 seconds it writes each changed model to Valkey, under the key `linucb:<product id>`.
@@ -191,7 +193,7 @@ Step 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serv
 
 ### Submit the Flink job
 
-Step 2 needs the history from `python -m recommender.run.prepare`.
+Part 2 needs the history from `python -m recommender.run.prepare`.
 
 ```bash
 ./submit-job.sh
@@ -221,7 +223,7 @@ docker exec valkey valkey-cli --user user --pass password --no-auth-warning --sc
 python -m recommender.run.live
 ```
 
-It serves a visit every 0.1 seconds until Ctrl+C, printed as in Step 1. For each visit it reads all 200 models from Valkey in one request, shows the five best, and sends a feedback event to Kafka with the product, the reward (1 for a click, 0 for none) and the context.
+It serves a visit every 0.1 seconds until Ctrl+C, printed as in Part 1. For each visit it reads all 200 models from Valkey in one request, shows the five best, and sends a feedback event to Kafka with the product, the reward (1 for a click, 0 for none) and the context.
 
 To see the job write the models, watch a TaskManager's log in a second terminal:
 
@@ -255,7 +257,7 @@ They check, for example, that a seed repeats the users and clicks, that a click 
 
 ## Clean up
 
-`python -m recommender.stores.cleanup` removes what Step 2 wrote to the services, and keeps them running:
+`python -m recommender.stores.cleanup` removes what Part 2 wrote to the services, and keeps them running:
 
 - **Flink:** cancels the job `RecommenderParameterUpdate` first, so it cannot write a model after the models are deleted.
 - **Valkey:** deletes every `linucb:*` key. Without this, a new run starts from the last run's models.

@@ -143,7 +143,7 @@ Avg Click Rate: 13.65%
 python -m recommender.run.evaluate
 ```
 
-This is **offline policy evaluation**: six policies, the rules that pick what to show, each train on the first 8,000 visits of the history and are scored on the last 2,000:
+This is **offline policy evaluation**: it uses the history to find which recommender would get the most clicks, without showing anything to real users. Six policies, the rules that pick what to show, each learn from the first 8,000 visits and are tested on the last 2,000:
 
 ```
             AUC(score)@5  CTR(score)@5  Precision@5  Recall@5
@@ -155,7 +155,9 @@ LinTS           0.640798      0.211538     0.008527  0.042636
 ClustersTS      0.550505      0.153846     0.004651  0.023256
 ```
 
-A visit is scored only when its logged product is among the policy's five. Each policy's click rate rests on 39 to 52 such visits, so a difference of a few points can come from chance ([why](docs/concepts.md#support-and-uncertainty)). `CTR(score)@5` is the click rate on those visits: LinUCB's 20.5% is double Random's 10.2%, and its ranking score, `AUC(score)@5`, is close to the best. LinGreedy separates clicks best (AUC 0.89), but its picks are clicked little more often than Random's (CTR 11.8% against 10.2%), because without a bonus it stays with the products it learned first. LinTS has a slightly higher CTR than LinUCB, but ranks poorly (AUC 0.64). LinUCB is the one policy high on both, so it is chosen. [Concepts](docs/concepts.md#offline-policy-evaluation) explains each column and policy.
+LinUCB is chosen. Its picks are clicked about twice as often as random picks (`CTR(score)@5` 20.5% against 10.2%), and it ranks the clicked products high (`AUC(score)@5` 0.86). LinGreedy ranks well, but its picks are rarely clicked, and LinTS is clicked often, but ranks poorly. Each score rests on few visits, so small differences can be chance.
+
+[Concepts](docs/concepts.md#offline-policy-evaluation) explains how the visits are scored, what each column means and how each policy picks.
 
 ### Run LinUCB locally
 
@@ -163,7 +165,7 @@ A visit is scored only when its logged product is among the policy's five. Each 
 python -m recommender.run.local
 ```
 
-It trains LinUCB on the whole history, then serves 30 visits, learning from each one straight away ([online learning](docs/concepts.md#online-learning)). Each line is one visit. These are visits 21 and 30:
+It trains LinUCB on the whole history, then serves 30 visits, learning from each one straight away ([online learning](docs/concepts.md#online-learning)). Each line is one visit. Two of them, from users 0552 and 0508:
 
 ```
 User 0552 (39 yo) @ Tue 11:33 -> Recs: [192, 190, 189, 194, 193] -> Clicked: 192 (✅)
@@ -174,7 +176,7 @@ User 0508 (64 yo) @ Tue 12:41 -> Recs: [165, 087, 026, 171, 037] -> Clicked: 165
 - The five products recommended, best first.
 - The product clicked with ✅, or, when no product was clicked, the first one shown with ❌.
 
-Visit 21 is on a Tuesday morning, and all five recommendations are coffees, products 189 to 194. Visit 30 is on the same Tuesday, 41 minutes after the morning ends at 12:00, and no coffee is shown. The time of day is part of the context, and the history taught it that coffee is clicked in the morning. Across the 30 visits, 16 end in a click, 53%, against 13.65% at random. [Concepts](docs/concepts.md#linucb) explains how LinUCB scores.
+User 0552 visits on a Tuesday morning, and all five recommendations are coffees, products 189 to 194. User 0508 visits on the same Tuesday, 41 minutes after the morning ends at 12:00, and no coffee is shown. The time of day is part of the context, and the history taught it that coffee is clicked in the morning. Across the 30 visits, 16 end in a click, 53%, against 13.65% at random. [Concepts](docs/concepts.md#linucb) explains how LinUCB scores.
 
 ## Part 2: event-driven system
 
@@ -182,6 +184,13 @@ Part 2 splits the prototype's work in two ([why](docs/concepts.md#splitting-serv
 
 - **Serving:** `python -m recommender.run.live` reads every product's model from Valkey, recommends the five highest-scoring products, and sends the visit's result to the Kafka topic `feedback-events`.
 - **Training:** the Flink job `RecommenderParameterUpdate` reads the history, then every feedback event. Every 5 seconds it writes each changed model to Valkey, under the key `linucb:<product id>`.
+
+What each component does:
+
+- **Kafka:** carries each visit's result from the client to the Flink job, as an Avro event whose schema is kept in Karapace. The client sends and moves on, so it never waits for training ([feedback events](docs/concepts.md#feedback-events)).
+- **Flink:** keeps each product's model as state, updates it from every event, and saves a checkpoint every 10 seconds, so a restart loses nothing ([Flink job](docs/concepts.md#flink-job)).
+- **Valkey:** holds one model per product, where training leaves it and serving reads it. The client reads all 200 models in one request per visit ([Valkey](docs/concepts.md#valkey-as-the-model-store)).
+- **SeaweedFS:** an S3-compatible store that holds the history the Flink job reads first, and the job's checkpoints ([Data](docs/data.md#part-2)).
 
 ### Build the Flink job
 

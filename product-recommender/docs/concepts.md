@@ -42,7 +42,7 @@ A model needs numbers, so [`features.py`](../recommender/data/features.py) turns
 - **Product text** becomes 10 numbers, `txt_0` to `txt_9`: TextWiser weights the words with TF-IDF and reduces them to 10 dimensions with SVD.
 - **Visit time** becomes five flags: `is_morning` (06:00 to 12:00), `is_afternoon` (12:00 to 18:00), `is_evening` (18:00 to 24:00), `is_weekend` and `is_weekday`.
 
-The fitted transformations are saved, so a new user gets the same ones. The **context vector** `x` the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the ground truth reads the product features.
+The fitted transformations are saved, so a new user gets the same ones. The **context vector** $x$ the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the ground truth reads the product features.
 
 ## Ground truth
 
@@ -55,28 +55,36 @@ The fitted transformations are saved, so a new user gets the same ones. The **co
 | Budget | a young user (scaled age below 0.25) and an expensive product (scaled price above 0.8) | −3.0 |
 | Traffic source | the user arrived from a search | +0.5 |
 
-A sigmoid, `1 / (1 + e^(−score))`, turns the score into a chance, and `will_click` draws against it. A visit no rule applies to has a 7.6% chance, and a morning coffee 50%. So even the right product is often not clicked. The history pairs random users with random products, so most visits match no rule, and its click rate is 13.65%.
+A sigmoid, $\frac{1}{1 + e^{-s}}$ for a score $s$, turns the score into a chance, and `will_click` draws against it. A visit no rule applies to has a 7.6% chance, and a morning coffee 50%. So even the right product is often not clicked. The history pairs random users with random products, so most visits match no rule, and its click rate is 13.65%.
 
 ## LinUCB
 
-LinUCB keeps one linear model per product, made of two values:
+LinUCB keeps one linear model per product $a$, made of two values:
 
-- `A`, a 15 by 15 matrix. It starts as the identity matrix and grows by `x xᵀ` each time the product is shown, so it records the contexts the product has been shown in.
-- `b`, 15 numbers. It starts at 0 and grows by the reward times `x`, so it records the contexts the product was clicked in.
+- $A_a$, a 15 by 15 matrix, records **exposure**: the contexts the product has been shown in.
+- $b_a$, 15 numbers, records **success**: the contexts the product was clicked in.
 
-These are the two sums of a **ridge regression**, a linear regression that adds λ times the identity matrix to keep its weights small. MABWiser uses λ = 1, which is why `A` starts as the identity. From these come `A_inv`, the inverse of `A`, and the weights `θ = A_inv b`. A product's score for context `x` is:
+Both start empty: $A_a = \lambda I$, the identity matrix scaled by $\lambda$, and $b_a = 0$. MABWiser uses $\lambda = 1$, so $A_a$ starts as the identity. Each time the product is shown in context $x$ with reward $r$, 1 for a click and 0 for none, both are updated:
 
-`score = xᵀθ + α √(xᵀ A_inv x)`
+$$
+A_a \leftarrow A_a + x x^\top \qquad b_a \leftarrow b_a + r x
+$$
 
-- `xᵀθ` is the predicted reward, the exploitation part.
-- `α √(xᵀ A_inv x)` is the **upper confidence bound**, a bonus that is large when the product has rarely been shown in contexts like `x`. This is the exploration part.
-- `α` sets the bonus's weight. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
+$A_a$ grows in the directions of the contexts the product has been shown in, and $b_a$ grows only when the product was clicked. These are the two sums of a **ridge regression**, a linear regression that adds $\lambda I$ to keep its weights small. Its weights are $\theta_a = A_a^{-1} b_a$, and a product's score for context $x$ is:
 
-LinUCB shows the five highest scores. The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). The Flink job makes the same updates in Kotlin, and the live client scores with the same formula in `bandit.score`.
+$$
+\text{score}_a = x^\top \theta_a + \alpha \sqrt{x^\top A_a^{-1} x}
+$$
+
+- **Exploitation,** $x^\top \theta_a$: the predicted reward. It is high when $x$ looks like the contexts that led to clicks.
+- **Exploration,** $\alpha \sqrt{x^\top A_a^{-1} x}$: the **upper confidence bound**, a bonus for uncertainty. For a context the product has often been shown in, $A_a$ is large in that direction, $A_a^{-1}$ small, and the bonus small, so the score relies on the prediction. For a context it has rarely or never been shown in, $A_a$ is still close to the identity, so the bonus is large and the product gets tried.
+- $\alpha$ sets the bonus's weight. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
+
+LinUCB shows the five highest scores. The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). In Part 2 the [Flink job](#flink-job) makes the same updates in Kotlin and stores $A_a^{-1}$ as `A_inv`, and the live client scores with the same formula in `bandit.score`.
 
 ## Online learning
 
-**Online learning** means learning from each result as it arrives, instead of retraining on all the data now and then. After each visit, `recommender.run.local` calls MABWiser's `partial_fit` with the product the result is recorded against, the clicked one or else the first one shown. It adds the visit to that product's `A` and `b`, so the next visit is ranked with what this one taught.
+**Online learning** means learning from each result as it arrives, instead of retraining on all the data now and then. After each visit, `recommender.run.local` calls MABWiser's `partial_fit` with the product the result is recorded against, the clicked one or else the first one shown. It adds the visit to that product's $A_a$ and $b_a$, so the next visit is ranked with what this one taught.
 
 Both the prototype and the Flink job first train on the whole history, a **warm start**, so they do not begin from nothing.
 
@@ -134,7 +142,7 @@ On weekend evenings LinUCB's five are mostly pizzas, and on weekday mornings the
 
 ### Support and uncertainty
 
-The number of visits a score is based on is its **support**. A click rate p measured on n visits has a **standard error** of about √(p(1 − p) / n), the typical distance between the measured rate and the true one. With p = 0.2 and n = 50 that is about 0.06. So two click rates a few points apart may differ by chance alone. AUC depends on the few clicks among them, so it is less certain still.
+The number of visits a score is based on is its **support**. A click rate $p$ measured on $n$ visits has a **standard error** of about $\sqrt{p(1 - p) / n}$, the typical distance between the measured rate and the true one. With $p = 0.2$ and $n = 50$ that is about 0.06. So two click rates a few points apart may differ by chance alone. AUC depends on the few clicks among them, so it is less certain still.
 
 ### Metrics
 
@@ -161,7 +169,7 @@ The number of visits a score is based on is its **support**. A click rate p meas
 One process that recommends and learns does not scale: the next user waits while it learns, and copies of it would learn different models. Part 2 splits the work:
 
 - **Serving**, the live client, keeps nothing between visits: it reads the models, scores and sends the result. So copies of it could run side by side.
-- **Training**, the Flink job, holds every product's `A` and `b` and updates them.
+- **Training**, the Flink job, holds every product's $A_a$ and $b_a$ and updates them.
 - **Kafka** sits between them. The client writes an event and moves on, and a burst of visits waits in the topic rather than slowing the client.
 - **Valkey** is where training hands the models to serving.
 
@@ -180,9 +188,9 @@ The trainer in [`recsys-trainer`](../recsys-trainer) is a Flink job, which runs 
 A Flink cluster's **JobManager** plans the job and coordinates its checkpoints, and its **TaskManagers**, three in odctl's `flink-full`, run the tasks. The job runs each stage as six tasks, its parallelism in [`AppConfig.kt`](../recsys-trainer/src/main/kotlin/me/jaehyeon/config/AppConfig.kt).
 
 - **Hybrid source:** Flink's `HybridSource` reads its sources one after another. The job reads the history file from SeaweedFS, then switches to the topic `feedback-events` when the file ends.
-- **Keyed state per product:** `keyBy { it.productId }` sends every event for a product to the same task, and Flink's **keyed state** keeps a value per key. So each event updates exactly its own product's `A` and `b`, with no lookup.
+- **Keyed state per product:** `keyBy { it.productId }` sends every event for a product to the same task, and Flink's **keyed state** keeps a value per key. So each event updates exactly its own product's $A_a$ and $b_a$, with no lookup.
 - **Checkpoints:** odctl keeps the state in RocksDB, an embedded database on each TaskManager. Every 10 seconds the job saves a **checkpoint**, a consistent copy of the state, to SeaweedFS. After a failure it restarts from the last one, and no feedback is counted twice.
-- **Writes every 5 seconds:** [`LinUCBUpdater`](../recsys-trainer/src/main/kotlin/me/jaehyeon/topology/processing/LinUCBUpdater.kt) updates `A` and `b` on every event. The first update after a write starts a 5-second timer for that product. When it fires, the job inverts `A` with an LU decomposition and writes `A_inv` and `b`. A product with hundreds of events in that time is written once, and the client never inverts anything.
+- **Writes every 5 seconds:** [`LinUCBUpdater`](../recsys-trainer/src/main/kotlin/me/jaehyeon/topology/processing/LinUCBUpdater.kt) updates $A_a$ and $b_a$ on every event. The first update after a write starts a 5-second timer for that product. When it fires, the job inverts $A_a$ with an LU decomposition and writes $A_a^{-1}$ and $b_a$, as `A_inv` and `b`. A product with hundreds of events in that time is written once, and the client never inverts anything.
 - **Sink:** each model is written with a Valkey `SET` of `linucb:<product id>`. `SET` replaces the old value, so writing a model twice after a restart does no harm.
 
 ## Valkey as the model store

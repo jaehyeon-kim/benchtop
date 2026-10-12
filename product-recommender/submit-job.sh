@@ -43,3 +43,6 @@ docker exec "$JOBMANAGER" flink run -d "/tmp/$(basename "$JAR")"
 echo
 echo "Flink UI:  http://127.0.0.1:8082"
 echo "Kafka UI:  http://127.0.0.1:8086"
+echo "SeaweedFS: http://127.0.0.1:8889/buckets/odctl-dev/recsys/"
+echo "Valkey:    redis://user:password@127.0.0.1:6379, the models under linucb:<product id>"
+echo "           docker exec valkey valkey-cli --no-auth-warning -u redis://user:password@localhost:6379 get linucb:192"

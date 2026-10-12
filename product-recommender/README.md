@@ -22,7 +22,7 @@ The recommender is a **contextual bandit**: for each visit it shows five product
 
 **Step 1: a prototype in one Python process**
 
-![Data preparation writes the data folder, which the offline policy evaluation and the local simulation read](images/part-1.png)
+![Data generation, feature engineering and history simulation build the history; the offline policy evaluation selects LinUCB, which the local simulation trains on the history and then runs](images/part-1.png)
 
 1. Generate 1,000 users, the features of 200 products, and a history of 10,000 past visits.
 2. Compare six recommenders on that history, and pick LinUCB.
@@ -30,7 +30,7 @@ The recommender is a **contextual bandit**: for each visit it shows five product
 
 **Step 2: an event-driven system**
 
-![The live client sends feedback to Kafka, the Flink job trains the models from it and from the history in SeaweedFS, and writes them to Valkey for the client to read](images/part-2.png)
+![The Flink job trains the models on the history in SeaweedFS first, then on the feedback the live client sends to Kafka, and writes them to Valkey for the client to read](images/part-2.png)
 
 1. Build the Flink job and submit it. It trains the models on the history first.
 2. Run the live client. It recommends from the models in Valkey and sends each result to Kafka.

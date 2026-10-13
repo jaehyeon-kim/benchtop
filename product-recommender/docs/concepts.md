@@ -2,12 +2,6 @@
 
 The ideas the [product-recommender](../README.md) is built on, each tied to where the code uses it.
 
-## Cold start
-
-A recommender that learns from each user's past clicks has nothing to go on for a new user or product. This is the **cold-start problem**.
-
-This project avoids it by learning from the visit's context instead: a first-time visitor still has an age, a traffic source and a time of day.
-
 ## Bandits
 
 A **multi-armed bandit** is a problem in which a learner chooses again and again between options, and learns what each option is worth only by trying it. The terms:
@@ -31,6 +25,10 @@ Three common ways to balance the two, each used by a policy here:
 
 A plain bandit learns one click rate per product. A **contextual bandit** learns how the click rate depends on the **context**, what is known about the visit. For example, a coffee can be a good choice in the morning and a poor one at night.
 
+A recommender that learns from each user's past clicks has nothing to go on for a new user or product. This is the **cold-start problem**.
+
+This project avoids it by learning from the visit's context instead: a first-time visitor still has an age, a traffic source and a time of day.
+
 Each policy scores all 200 products and shows the five highest, the **top-k** with k = 5 (`TOP_K` in [`config.py`](../recommender/core/config.py)).
 
 ## Features and the context vector
@@ -43,19 +41,6 @@ A model needs numbers, so [`features.py`](../recommender/data/features.py) turns
 - **Visit time** becomes five flags: `is_morning` (06:00 to 12:00), `is_afternoon` (12:00 to 18:00), `is_evening` (18:00 to 24:00), `is_weekend` and `is_weekday`.
 
 The fitted transformations are saved, so a new user gets the same ones. The **context vector** $x$ the bandit sees is the user's 10 features and the 5 time flags, 15 numbers. Only the ground truth reads the product features.
-
-## Ground truth
-
-`click_probability` in [`simulation.py`](../recommender/engine/simulation.py) decides the simulated clicks. It is the simulation's **ground truth**, and the bandit never sees it. It starts from a score of −2.5 and applies four rules:
-
-| Rule | When | Change |
-|---|---|---|
-| Morning coffee | a morning visit and a coffee | +2.5 |
-| Weekend comfort food | a weekend visit and a pizza or burger | +1.8 |
-| Budget | a young user (scaled age below 0.25) and an expensive product (scaled price above 0.8) | −3.0 |
-| Traffic source | the user arrived from a search | +0.5 |
-
-A sigmoid, $\frac{1}{1 + e^{-s}}$ for a score $s$, turns the score into a chance, and `will_click` draws against it. A visit no rule applies to has a 7.6% chance, and a morning coffee 50%. So even the right product is often not clicked. The history pairs random users with random products, so most visits match no rule, and its click rate is 13.65%.
 
 ## LinUCB
 
@@ -70,11 +55,11 @@ $$
 where:
 
 - $x$ is the [context vector](#features-and-the-context-vector), 15 numbers;
-- $A_a$, a 15 by 15 matrix, records **exposure**, the contexts the product has been shown in;
-- $b_a$, a vector of 15 numbers, records **success**, the contexts the product was clicked in;
-- $\theta_a$ is the model's weights, one for each of the 15 context numbers;
-- $x^\top \theta_a$ is the predicted reward, the **exploitation** part. It is high when $x$ looks like the contexts that led to clicks;
-- $\alpha \sqrt{x^\top A_a^{-1} x}$ is the **upper confidence bound**, the **exploration** part. It is small for contexts the product has often been shown in, where $A_a$ is large, and large for contexts it has rarely been shown in, so the product gets tried;
+- $A_a$, a 15 by 15 matrix, records **exposure**: it adds up the contexts the product has been shown in, so it grows with every showing;
+- $b_a$, a vector of 15 numbers, records **success**: it adds up the contexts the product was clicked in;
+- $\theta_a$ is the model's weights, one for each of the 15 context numbers, found by a **ridge regression** (a linear regression that keeps its weights small) from $A_a$ and $b_a$. $b_a$ alone counts only clicks, so a product shown often would score high even with a low click rate. Multiplying by $A_a^{-1}$ divides the clicks by the showings;
+- $x^\top \theta_a$ is the regression's prediction of the reward for this visit, the **exploitation** part. The rewards it was fitted to are 1 for a click and 0 for none, and a regression predicts the average reward for a context. The average of ones and zeros is the share of visits that ended in a click, so the prediction is an estimate of the click chance;
+- $\sqrt{x^\top A_a^{-1} x}$ is how uncertain the estimate is. It shrinks as $A_a$ grows, so it is small for contexts the product has often been shown in and large for contexts it has rarely been shown in. The estimate plus $\alpha$ times this uncertainty is the top of a range the true click chance probably lies in, an **upper confidence bound**, which gives LinUCB its name;
 - $\alpha$ is a **hyperparameter**, a setting chosen rather than learned. A larger $\alpha$ makes exploration count for more. It is 1.0 here, `ALPHA` in [`config.py`](../recommender/core/config.py), and also MABWiser's default.
 
 **Update.** Each time product $a$ is shown in context $x$ and gets reward $r$, its model is updated:
@@ -86,9 +71,7 @@ $$
 where:
 
 - $r$ is the reward, 1 for a click and 0 for none, so $b_a$ grows only on a click;
-- $A_a$ starts as $\lambda I$, the identity matrix scaled by $\lambda$, and $b_a$ starts at 0. MABWiser uses $\lambda = 1$.
-
-$A_a$ and $b_a$ are the two sums of a **ridge regression**, a linear regression that adds $\lambda I$ to keep its weights small, and $\theta_a$ is its solution.
+- $A_a$ starts as $\lambda I$, the identity matrix scaled by $\lambda$, and $b_a$ starts at 0. The $\lambda I$ is what keeps the ridge regression's weights small. MABWiser uses $\lambda = 1$.
 
 The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit.py)). In Part 2 the [Flink job](#flink-job) makes the same updates in Kotlin and stores $A_a^{-1}$ as `A_inv`, and the live client scores with the same formula in `bandit.score`.
 
@@ -97,6 +80,19 @@ The prototype uses MABWiser's LinUCB ([`bandit.py`](../recommender/engine/bandit
 **Online learning** means learning from each result as it arrives, instead of retraining on all the data now and then. After each visit, `recommender.run.local` calls MABWiser's `partial_fit` with the product the result is recorded against, the clicked one or else the first one shown. It adds the visit to that product's $A_a$ and $b_a$, so the next visit is ranked with what this one taught.
 
 Both the prototype and the Flink job first train on the whole history, a **warm start**, so they do not begin from nothing.
+
+## Ground truth
+
+`click_probability` in [`simulation.py`](../recommender/engine/simulation.py) decides the simulated clicks. It is the simulation's **ground truth**, and the bandit never sees it. It starts from a score of −2.5 and applies four rules:
+
+| Rule | When | Change |
+|---|---|---|
+| Morning coffee | a morning visit and a coffee | +2.5 |
+| Weekend comfort food | a weekend visit and a pizza or burger | +1.8 |
+| Budget | a young user (scaled age below 0.25) and an expensive product (scaled price above 0.8) | −3.0 |
+| Traffic source | the user arrived from a search | +0.5 |
+
+A sigmoid, $\frac{1}{1 + e^{-s}}$ for a score $s$, turns the score into a chance, and `will_click` draws against it. A visit no rule applies to has a 7.6% chance, and a morning coffee 50%. So even the right product is often not clicked. The history pairs random users with random products, so most visits match no rule, and its click rate is 13.65%.
 
 ## Offline policy evaluation
 
@@ -150,19 +146,6 @@ Four of LinUCB's test visits, from the run with the default seed, 1237:
 
 On weekend evenings LinUCB's five are mostly pizzas, and on weekday mornings they include coffees, as the [ground truth](#ground-truth) rewards. Across the 2,000 test visits, 44 are kept and 9 of those were clicked, so its `CTR(score)@5` is 9 / 44 = 20.5%.
 
-### Support and uncertainty
-
-The number of visits a score is based on is its **support**. A click rate $p$ measured on $n$ visits has a **standard error** of about $\sqrt{p(1 - p) / n}$, the typical distance between the measured rate and the true one. With $p = 0.2$ and $n = 50$ that is about 0.06. So two click rates a few points apart may differ by chance alone. AUC depends on the few clicks among them, so it is less certain still.
-
-### Metrics
-
-| Column | Measured on | Measures |
-|---|---|---|
-| `AUC(score)@5` | the kept visits | how well the policy's score for the logged product separates clicked visits from the rest. **AUC**, the area under the ROC curve, is the chance that a clicked visit gets a higher score than one that was not clicked: 0.5 is chance, 1.0 is perfect |
-| `CTR(score)@5` | the kept visits | the **click-through rate (CTR)**, the share of visits that ended in a click |
-| `Precision@5` | the test visits that ended in a click | the share of the five recommended products that were the clicked one. One product is logged per visit, so it is at most 0.2 |
-| `Recall@5` | the same visits | 1 if the clicked product was among the five and 0 if not, averaged. One product is logged per visit, so it is exactly five times the precision |
-
 ### Policies
 
 | Policy | How it picks |
@@ -173,6 +156,19 @@ The number of visits a score is based on is its **support**. A click rate $p$ me
 | LinUCB | a linear model per product, with an upper confidence bound, as above |
 | LinTS | a linear model per product, with Thompson sampling: the weights are drawn at random around their estimate |
 | ClustersTS | visits grouped into 10 clusters by their context with k-means, and Thompson sampling on the click rates within the visit's nearest cluster |
+
+### Metrics
+
+| Column | Measured on | Meaning |
+|---|---|---|
+| `CTR(score)@5` | the kept visits | the **click-through rate (CTR)**: the share clicked |
+| `AUC(score)@5` | the kept visits | how often the policy rated a clicked product as more likely to be clicked than an unclicked one. 0.5 is guessing |
+| `Recall@5` | every test visit with a click | how often the clicked product was one of the five the policy would show |
+| `Precision@5` | the same visits | how many of the five were clicked. At most 1 of 5 here, so it is the recall divided by 5 |
+
+### Support and uncertainty
+
+The number of visits a score is based on is its **support**. A click rate $p$ measured on $n$ visits has a **standard error** of about $\sqrt{p(1 - p) / n}$, the typical distance between the measured rate and the true one. With $p = 0.2$ and $n = 50$ that is about 0.06. So LinUCB's lead over Random shows a real difference, but scores a few points apart may not. AUC rests on the same visits, and measures how well a policy ranks rather than how many clicks it gains.
 
 ## Splitting serving from training
 

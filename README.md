@@ -1,21 +1,10 @@
 # Benchtop
 
-Small projects, built and tested on a bench. Each one is self-contained, runs from a cold clone, and takes about a day to build.
-
-## Layout
-
-One directory per project. Each carries its own `README.md` saying what it builds and how to run it, and can be read, run and understood without the others. Only the code checks are shared, at the root.
-
-```
-benchtop/
-  <project>/
-    README.md      what it builds, how to run it
-    ...
-```
+Projects built and tested on a bench. Each one is self-contained, runs from a cold clone, and takes about a day to build.
 
 ## Projects
 
-Every project runs on your own machine, with Docker, [uv](https://docs.astral.sh/uv/) and [odctl](https://github.com/jaehyeon-kim/odctl), which starts the services each one needs. Each project stands on its own, so start with whichever you want. New projects are added over time. The [introduction](https://jaehyeon.me/blog/2026-09-30-introducing-benchtop/) explains how the projects are organised.
+Every project runs on your own machine, with Docker, [uv](https://docs.astral.sh/uv/) and [odctl](https://github.com/jaehyeon-kim/odctl), which starts the services each one needs. Start with whichever you want. New projects are added over time. The [introduction](https://jaehyeon.me/blog/2026-09-30-introducing-benchtop/) explains how the projects are organised.
 
 ### Streaming and data engineering
 

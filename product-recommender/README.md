@@ -168,15 +168,21 @@ python -m recommender.run.local
 It trains LinUCB on the whole history, then serves 30 visits, learning from each one straight away ([online learning](docs/concepts.md#online-learning)). Each line is one visit. Two of them, from users 0552 and 0508:
 
 ```
-User 0552 (39 yo) @ Tue 11:33 -> Recs: [192, 190, 189, 194, 193] -> Clicked: 192 (✅)
-User 0508 (64 yo) @ Tue 12:41 -> Recs: [165, 087, 026, 171, 037] -> Clicked: 165 (❌)
+User 0552 (39 yo) @ Tue 11:33 -> Recs: [192, 190, 189, 194, 193] -> Clicked: 192  (✅), Reward: 1 on 192
+User 0508 (64 yo) @ Tue 12:41 -> Recs: [165, 087, 026, 171, 037] -> Clicked: None (❌), Reward: 0 on 165
 ```
 
 - The user, their age and the visit time.
 - The five products recommended, best first.
-- The product clicked with ✅, or, when no product was clicked, the first one shown with ❌.
+- The product clicked with ✅, or `None` with ❌.
+- The reward the model learns from this visit, 1 or 0, and the product it updates: the clicked one, or the first one shown when nothing was clicked.
 
-User 0552 visits on a Tuesday morning, and all five recommendations are coffees, products 189 to 194. User 0508 visits on the same Tuesday, 41 minutes after the morning ends at 12:00, and no coffee is shown. The time of day is part of the context, and the history taught it that coffee is clicked in the morning. Across the 30 visits, 16 end in a click, 53%, against 13.65% at random. [Concepts](docs/concepts.md#linucb) explains how LinUCB scores.
+The two lines show how the time of day changes the recommendations:
+
+- **User 0552, Tuesday 11:33:** all five recommendations are coffees, products 189 to 194.
+- **User 0508, Tuesday 12:41:** 41 minutes after the morning ends at 12:00, no coffee is shown.
+
+The time of day is part of the context, and the history taught the model that coffee is clicked in the morning. Across the 30 visits, 16 end in a click, 53%, against 13.65% at random. [Concepts](docs/concepts.md#linucb) explains how LinUCB scores.
 
 ## Part 2: event-driven system
 
@@ -234,10 +240,16 @@ python -m recommender.run.live
 
 It serves a visit every 0.1 seconds until Ctrl+C, printed as in Part 1. For each visit it reads all 200 models from Valkey in one request, shows the five best, and sends a feedback event to Kafka with the product, the reward (1 for a click, 0 for none) and the context.
 
-To see the job write the models, watch a TaskManager's log in a second terminal:
+To see the job write the models, use a second terminal. The job's six tasks need only six of the 15 slots, so Flink may place them on two of the three TaskManagers. Count each one's writes first:
 
 ```bash
-docker logs flink-taskmanager-a -f
+for tm in a b c; do echo "taskmanager-$tm: $(docker logs flink-taskmanager-$tm 2>&1 | grep -c 'Updated model')"; done
+```
+
+Then follow one with a count above 0, for example:
+
+```bash
+docker logs flink-taskmanager-b -f
 ```
 
 A line such as `Updated model for Product 192 in batch` appears each time the job writes a product's model to Valkey. The [feedback events](docs/concepts.md#feedback-events) are in Kafka UI, under the topic `feedback-events`. [Concepts](docs/concepts.md#valkey-as-the-model-store) explains why the client reads every model on every visit.

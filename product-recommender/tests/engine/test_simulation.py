@@ -55,7 +55,17 @@ def test_visit_prints_as_the_posts_show():
     v = Visit(user, _FRIDAY_9AM, {}, [5, 12, 150], 12, 1)
     assert (
         str(v)
-        == "User 0007 (30 yo) @ Fri 09:05 -> Recs: [005, 012, 150] -> Clicked: 012 (✅)"
+        == "User 0007 (30 yo) @ Fri 09:05 -> Recs: [005, 012, 150] -> Clicked: 012  (✅), Reward: 1 on 012"
+    )
+
+
+def test_a_visit_with_no_click_prints_the_reward_on_the_first_product():
+    """Verify the printed line of a visit with no click."""
+    user = User(7, "A", "B", "a@b.c", 30, "F", "1 St", "3000", "Melbourne", "Victoria", "Australia", -37.8, 145.0, "Search")  # fmt: skip
+    v = Visit(user, _FRIDAY_9AM, {}, [5, 12, 150], 5, 0)
+    assert (
+        str(v)
+        == "User 0007 (30 yo) @ Fri 09:05 -> Recs: [005, 012, 150] -> Clicked: None (❌), Reward: 0 on 005"
     )
 
 

@@ -111,10 +111,15 @@ class Visit:
 
     def __str__(self) -> str:
         recs = ", ".join(str(r).rjust(3, "0") for r in self.recommendations)
-        clicked = "✅" if self.reward else "❌"
+        chosen = str(self.chosen).rjust(3, "0")
+        result = (
+            f"Clicked: {chosen}  (✅), Reward: 1 on {chosen}"
+            if self.reward
+            else f"Clicked: None (❌), Reward: 0 on {chosen}"
+        )
         return (
             f"User {str(self.user.user_id).rjust(4, '0')} ({self.user.age} yo) @ {self.time.strftime('%a %H:%M')} "
-            f"-> Recs: [{recs}] -> Clicked: {str(self.chosen).rjust(3, '0')} ({clicked})"
+            f"-> Recs: [{recs}] -> {result}"
         )  # fmt: skip
 
 

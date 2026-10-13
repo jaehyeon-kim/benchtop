@@ -155,7 +155,7 @@ LinTS           0.640798      0.211538     0.008527  0.042636
 ClustersTS      0.550505      0.153846     0.004651  0.023256
 ```
 
-LinUCB is chosen. Its picks are clicked about twice as often as random picks (`CTR(score)@5` 20.5% against 10.2%), and it ranks the clicked products high (`AUC(score)@5` 0.86). LinGreedy ranks well, but its picks are rarely clicked, because it explores only at random and keeps showing the products it learned first, and LinTS is clicked often, but ranks poorly.
+LinUCB is chosen. Its picks are clicked about twice as often as random picks (`CTR(score)@5` 20.5% against 10.2%), and it ranks the clicked products high (`AUC(score)@5` 0.86). LinGreedy ranks as well, and its low click rate here comes from the few visits it was scored on, so the two are close. LinUCB is preferred for how it explores: it tries the products it knows least about, while LinGreedy picks at random on one visit in ten. LinTS is clicked often, but ranks poorly.
 
 [Concepts](docs/concepts.md#offline-policy-evaluation) explains how the visits are scored, what each column means and how each policy picks.
 

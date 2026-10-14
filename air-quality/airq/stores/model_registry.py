@@ -95,25 +95,6 @@ def promote(client=None) -> tuple[str, str]:
     return challenger.version, champion.version
 
 
-def _all_pages(search) -> list:
-    """
-    Collects every page of an MLflow search.
-
-    Args:
-        search (Callable[[str | None], PagedList]): Runs the search for a page token.
-
-    Returns:
-        list: The results of every page.
-    """
-    results, token = [], None
-    while True:
-        page = search(token)
-        results += list(page)
-        token = page.token
-        if not token:
-            return results
-
-
 def delete_experiment(s3) -> None:
     """
     Deletes the registered model, the experiment's runs and logged models, and its files.
@@ -122,7 +103,7 @@ def delete_experiment(s3) -> None:
     experiment's name be used again.
 
     Args:
-        s3 (botocore.client.S3): The S3 client.
+        s3 (boto3.resources.base.ServiceResource): The S3 resource.
     """
     client = mlflow.MlflowClient()
     try:
@@ -134,18 +115,13 @@ def delete_experiment(s3) -> None:
     if experiment is None:
         return
     ids = [experiment.experiment_id]
-    models = _all_pages(
-        lambda token: client.search_logged_models(ids, page_token=token)
-    )
-    for model in models:
+    for model in mlflow.search_logged_models(ids, output_format="list"):
         client.delete_logged_model(model.model_id)
-    runs = _all_pages(lambda token: client.search_runs(ids, page_token=token))
+    runs = mlflow.search_runs(ids, output_format="list")
     for run in runs:
         client.delete_run(run.info.run_id)
     prefix = f"{experiment.experiment_id}/"
-    removed = s3_store.delete(
-        s3, _MLFLOW_BUCKET, s3_store.keys(s3, _MLFLOW_BUCKET, prefix)
-    )
+    removed = s3_store.delete_prefix(s3, _MLFLOW_BUCKET, prefix)
     logger.info(
         "MLflow: deleted %d runs of %s and %d files from s3://%s/%s",
         len(runs),

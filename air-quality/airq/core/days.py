@@ -12,6 +12,8 @@ import argparse
 import re
 from datetime import UTC, date, datetime, timedelta
 
+from dateutil.relativedelta import relativedelta, weekdays
+
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]  # fmt: skip
 FORMS = 'a phrase such as yesterday, "3 days ago", "a week ago", "last monday", "this weekend" or "20 September", or YYYY-MM-DD'  # fmt: skip
 
@@ -54,14 +56,12 @@ def resolve(text: str, on: date | None = None, forward: bool = False) -> date:
         return on + timedelta(days=int(match[1]))
     phrase = {"this weekend": "saturday", "next weekend": "next saturday", "last weekend": "last saturday"}.get(phrase, phrase)  # fmt: skip
     if (match := re.fullmatch(r"(?:(this|next|last) )?(\w+)", phrase)) and match[2] in WEEKDAYS:  # fmt: skip
-        ahead = (WEEKDAYS.index(match[2]) - on.weekday()) % 7
+        weekday = weekdays[WEEKDAYS.index(match[2])]
         if match[1] == "next":
-            return on + timedelta(days=ahead or 7)
+            return on + relativedelta(days=1, weekday=weekday(+1))
         if match[1] == "last":
-            return on - timedelta(days=(7 - ahead) % 7 or 7)
-        if forward:
-            return on + timedelta(days=ahead)
-        return on - timedelta(days=(7 - ahead) % 7)
+            return on + relativedelta(days=-1, weekday=weekday(-1))
+        return on + relativedelta(weekday=weekday(+1 if forward else -1))
     return _parse(phrase, on, forward)
 
 

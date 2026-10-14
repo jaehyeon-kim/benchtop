@@ -22,7 +22,7 @@ from airq.stores import airflow, feature_store, iceberg, model_registry, s3
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    client = s3.client()
+    client = s3.resource()
     airflow.delete_dags(client)
     model_registry.delete_experiment(client)
     feature_store.delete_project()

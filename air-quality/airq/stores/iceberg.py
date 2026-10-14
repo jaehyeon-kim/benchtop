@@ -7,7 +7,6 @@ from datetime import date
 import pyarrow as pa
 from pydantic import AwareDatetime, BaseModel
 from pyiceberg.catalog import Catalog, load_catalog
-from pyiceberg.exceptions import NoSuchNamespaceError
 
 from airq.core.config import CATALOG, NAMESPACE, PREDICTIONS, TABLES
 from airq.stores import s3 as s3_store
@@ -108,20 +107,16 @@ def drop_namespace(s3) -> None:
     none are left in SeaweedFS whatever the catalog does with them.
 
     Args:
-        s3 (botocore.client.S3): The S3 client.
+        s3 (boto3.resources.base.ServiceResource): The S3 resource.
     """
     cat = catalog()
-    try:
-        tables = cat.list_tables(NAMESPACE)
-    except NoSuchNamespaceError:
-        tables = []
+    tables = cat.list_tables(NAMESPACE) if cat.namespace_exists(NAMESPACE) else []
     for identifier in tables:
         cat.drop_table(identifier)
-    if tables or NAMESPACE in {n[0] for n in cat.list_namespaces()}:
+    if cat.namespace_exists(NAMESPACE):
         cat.drop_namespace(NAMESPACE)
     prefix = f"{NAMESPACE}/"
-    keys = s3_store.keys(s3, _WAREHOUSE_BUCKET, prefix)
-    removed = s3_store.delete(s3, _WAREHOUSE_BUCKET, keys)
+    removed = s3_store.delete_prefix(s3, _WAREHOUSE_BUCKET, prefix)
     logger.info(
         "Iceberg: dropped %d tables and %d files from s3://%s/%s",
         len(tables),

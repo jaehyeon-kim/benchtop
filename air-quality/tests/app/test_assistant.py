@@ -52,3 +52,36 @@ def test_model_error_text_names_the_lower_model(monkeypatch):
         "The challenger has the lower error at every lead."
         in assistant.model_error_text(30)
     )
+
+
+def test_observed_text_names_a_missing_day_once(monkeypatch):
+    """Verify that a day with no reading is named once, with the last day that has one."""
+    monkeypatch.setattr(reports, "observed", lambda start, end: pd.DataFrame(columns=["day", "pm2_5"]))  # fmt: skip
+    monkeypatch.setattr(reports, "last_measured_day", lambda: date(2026, 9, 25))
+    text = assistant.observed_text("tomorrow", "", SATURDAY)
+    assert (
+        text
+        == "No reading for 2026-09-27 (Sunday). Readings run to 2026-09-25 (Friday)."
+    )
+
+
+def test_compare_text_names_the_higher_day(monkeypatch):
+    """Verify that the comparison gives both values and names the higher day, and names a day the forecast does not cover."""
+    rows = pd.DataFrame(
+        {"as_of": SATURDAY, "day": [date(2026, 9, 27), date(2026, 10, 3)],
+         "lead_days": [1, 7], "pm2_5": [9.13, 15.92], "model_version": "5", "alias": "champion"}
+    )  # fmt: skip
+    monkeypatch.setattr(reports, "forecast", lambda as_of=None: rows)
+    text = assistant.compare_text("next saturday", "tomorrow", "champion", SATURDAY)
+    assert text.endswith("2026-10-03 (Saturday) is higher than 2026-09-27 (Sunday), by 6.79 µg/m³.")  # fmt: skip
+    assert "not 2026-09-28 (Monday)" in assistant.compare_text("monday", "tomorrow", "champion", SATURDAY)  # fmt: skip
+
+
+def test_observed_text_covers_the_last_days(monkeypatch):
+    """Verify that the last N days run from N days ago to yesterday."""
+    asked = {}
+    monkeypatch.setattr(reports, "observed", lambda start, end: asked.update(start=start, end=end) or pd.DataFrame(columns=["day", "pm2_5"]))  # fmt: skip
+    monkeypatch.setattr(reports, "last_measured_day", lambda: date(2026, 9, 25))
+    for phrase in ("last 7 days", "past seven days", "last_7_days"):
+        assistant.observed_text(phrase, "", SATURDAY)
+        assert asked == {"start": date(2026, 9, 19), "end": date(2026, 9, 25)}

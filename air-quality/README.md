@@ -67,7 +67,9 @@ The baseline is not a trained model. It is the error a model has to beat.
 | Tool | Role here |
 |---|---|
 | [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des) | simulates hourly weather forecasts and PM2.5 readings, and writes all four feature tables |
-| Apache Iceberg on SeaweedFS | stores every table; Iceberg is an open table format, and SeaweedFS is an S3-compatible object store |
+| Apache Iceberg | the open table format every table is stored in |
+| Iceberg REST catalog | records each table and the location of its current metadata; odctl runs Apache Iceberg's REST catalog server, which keeps that record in PostgreSQL |
+| SeaweedFS | an S3-compatible object store that holds the tables' data and metadata files |
 | Feast | the feature store |
 | XGBoost | the models |
 | MLflow | tracks training runs, and is the model registry |
@@ -130,10 +132,10 @@ Run step 2 before the first `odctl up`, because Airflow reads the setting only w
 
 The web UIs:
 
-- Airflow: http://127.0.0.1:8085, log in as `user` / `password`
-- MLflow: http://127.0.0.1:5004
-- Feast: http://127.0.0.1:8890
-- SeaweedFS file browser: http://127.0.0.1:8889
+- Airflow: [http://127.0.0.1:8085](http://127.0.0.1:8085), log in as `user` / `password`
+- MLflow: [http://127.0.0.1:5004](http://127.0.0.1:5004)
+- Feast: [http://127.0.0.1:8890/p/airq](http://127.0.0.1:8890/p/airq)
+- SeaweedFS file browser: [http://127.0.0.1:8889](http://127.0.0.1:8889)
 
 The code also connects to the Iceberg catalog, SeaweedFS's S3 API and PostgreSQL. [`airq/core/config.py`](./airq/core/config.py) sets their addresses, so there is nothing to configure.
 
@@ -174,99 +176,48 @@ Without `--catalog` and `--schema`, name tables in full as `iceberg.airq.<table>
 <details>
 <summary>Example queries on the backfilled tables</summary>
 
-The span of the backfill. The last hour should be 23:00 yesterday (UTC):
+The span of the backfill. The last day should be yesterday (UTC). A 730-day backfill gives 729 rows. Each row holds the previous day's mean in `pm2_5_lag1`. The first day has no day before it, so it is skipped:
 
 ```sql
-SELECT count(*) AS rows, min(measured_at) AS first_hour, max(measured_at) AS last_hour
-FROM observations;
+SELECT count(*) AS days, min(day) AS first_day, max(day) AS last_day
+FROM daily_air_quality;
 ```
 
-The forecast issued at midnight yesterday, one row per lead:
+The forecast issued yesterday for the seven days after it, which is what inference reads:
 
 ```sql
-SELECT lead_days, forecast_for, temperature_2m, precipitation, wind_speed_10m
-FROM weather_forecasts
-WHERE issued_at = date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '1' DAY
-ORDER BY lead_days;
-```
-
-Seven forecasts for noon yesterday, each issued on a different day:
-
-```sql
-SELECT issued_at, lead_days, temperature_2m, wind_speed_10m
-FROM weather_forecasts
-WHERE forecast_for = date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '1' DAY + INTERVAL '12' HOUR
-ORDER BY issued_at;
-```
-
-Daily mean PM2.5 over the last week:
-
-```sql
-SELECT date_trunc('day', measured_at) AS day, round(avg(pm2_5), 1) AS pm2_5
-FROM observations
-WHERE measured_at >= date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '7' DAY
-GROUP BY 1
-ORDER BY 1;
-```
-
-PM2.5 beside the lead-1 forecast, a preview of the daily features: lower on windy or wet days:
-
-```sql
-SELECT date_trunc('day', o.measured_at) AS day,
-       round(avg(o.pm2_5), 1) AS pm2_5,
-       round(avg(f.wind_speed_10m), 1) AS wind,
-       count_if(f.precipitation > 0) AS wet_hours
-FROM observations o
-JOIN weather_forecasts f ON f.forecast_for = o.measured_at AND f.lead_days = 1
-WHERE o.measured_at >= date_trunc('day', current_timestamp AT TIME ZONE 'UTC') - INTERVAL '7' DAY
-GROUP BY 1
-ORDER BY 1;
-```
-
-The weekday effect, which weather cannot explain:
-
-```sql
-SELECT day_of_week(measured_at) >= 6 AS weekend, round(avg(pm2_5), 1) AS pm2_5
-FROM observations
-GROUP BY 1;
-```
-
-Yesterday's daily weather at every lead, each averaged from the forecasts issued on a different day:
-
-```sql
-SELECT lead_days, issued_on, temperature_2m, wind_speed_10m, wet_hours
+SELECT lead_days, day, temperature_2m, wind_speed_10m, wet_hours
 FROM daily_weather
-WHERE day = CAST(current_timestamp AT TIME ZONE 'UTC' AS date) - INTERVAL '1' DAY
+WHERE issued_on = current_date - INTERVAL '1' DAY
 ORDER BY lead_days;
 ```
 
-The last week of the target, with the weekend flag and the previous day's mean:
+The weekend effect, which weather cannot explain:
 
 ```sql
-SELECT day, pm2_5, is_weekend, pm2_5_lag1
+SELECT is_weekend, round(avg(pm2_5), 1) AS pm2_5
 FROM daily_air_quality
-ORDER BY day DESC
-LIMIT 7;
+GROUP BY is_weekend;
 ```
 
 </details>
 
 ### Register v1's features
 
-Feast is the feature store. It serves features to training and inference through a **[feature view](docs/concepts.md#feature-groups-feature-views-entities-and-labels)**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. It is defined in [`feature_store.py`](airq/stores/feature_store.py). Register it once, and again after changing it:
+Feast is the feature store. It serves features to training and inference through a **[feature view](docs/concepts.md#feature-groups-feature-views-entities-and-labels)**, a named set of features that a model reads. v1 reads one view, `weather_v1`: the temperature, wind speed and hours of rain in `daily_weather`. Two **entities** identify each row of the view: the station (`location_id`) and the lead (`lead_days`). The view and its entities are defined in [`feature_store.py`](airq/stores/feature_store.py). Register them once, and again after changing them:
 
 ```bash
 python -m airq.stores.feature_store --version v1
 ```
 
-The Feast UI at http://127.0.0.1:8890 then shows the project `airq` with the `weather_v1` view.
+The Feast UI at [http://127.0.0.1:8890/p/airq](http://127.0.0.1:8890/p/airq) then shows the project `airq` with the `weather_v1` view and its two entities. It also lists a third entity, `__dummy`, which Feast adds to every project; airq does not use it.
 
 ![Feast UI listing the feature views of the project airq: weather_v1, with three features](images/feast-weather-v1.png)
 
-The rows training learns from: each day's PM2.5 beside the lead-1 weather and the weekend flag:
+The rows training learns from: each day's PM2.5 beside the lead-1 weather:
 
 ```sql
-SELECT a.day, a.pm2_5, w.temperature_2m, w.wind_speed_10m, w.wet_hours, a.is_weekend
+SELECT a.day, a.pm2_5, w.temperature_2m, w.wind_speed_10m, w.wet_hours
 FROM daily_air_quality a
 JOIN daily_weather w ON w.day = a.day AND w.lead_days = 1
 ORDER BY a.day DESC
@@ -287,7 +238,7 @@ The training pipeline trains v1 and registers it in MLflow as a new version of t
 python -m airq.training.train --version v1
 ```
 
-The run is in MLflow at http://127.0.0.1:5004, under the experiment `airq`.
+The run is in MLflow at [http://127.0.0.1:5004](http://127.0.0.1:5004), under the experiment `airq`.
 
 ![MLflow showing the registered model airq_pm25, with version 1 tagged feature_set v1 and the alias champion](images/mlflow-model-airq-pm25.png)
 
@@ -306,9 +257,9 @@ python -m airq.inference.infer                                 # as of yesterday
 The latest forecast, seven days from each model version:
 
 ```sql
-SELECT model_version, day, lead_days, pm2_5
+SELECT model_version, day, pm2_5
 FROM predictions
-WHERE as_of = (SELECT max(as_of) FROM predictions)
+WHERE as_of = current_date - INTERVAL '1' DAY
 ORDER BY model_version, day;
 ```
 
@@ -335,10 +286,10 @@ The [hindcast](docs/concepts.md#batch-inference-and-hindcasts) compares the pred
 python -m airq.inference.infer --hindcast
 ```
 
-Every prediction made for the last measured day, from seven days ahead to one, beside the measured value:
+Every prediction made for the last measured day, beside the measured value. At this point only the last two as-of dates have predicted it, so there are two rows; after the backtest in Step 2 there are seven, from seven days ahead to one:
 
 ```sql
-SELECT p.as_of, p.lead_days, p.model_version, p.pm2_5 AS predicted, a.pm2_5 AS measured
+SELECT p.model_version, p.lead_days, p.pm2_5 AS predicted, a.pm2_5 AS measured
 FROM predictions p
 JOIN daily_air_quality a ON a.day = p.day
 WHERE p.day = (SELECT max(day) FROM daily_air_quality)
@@ -367,21 +318,19 @@ The feature sweep tests which daily features to add to the weather. It records i
 python -m airq.training.sweep
 ```
 
-It finds that a weekend flag cuts the error by about 60%, because the simulation raises PM2.5 on weekdays. Past PM2.5 readings, from one to seven days back, add nothing. So v2 is the weather plus the weekend flag.
+Every error in this step is the mean absolute error (MAE) in µg/m³. The figures come from one run of these steps on 14 October 2026, with a 730-day backfill and seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. [`test_ordering.py`](tests/training/test_ordering.py) checks that.
 
-Every error in this step is the mean absolute error (MAE) in µg/m³. The figures come from one run over 730 days of simulated data with seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. [`test_ordering.py`](tests/training/test_ordering.py) checks that.
-
-The sweep's scores on the same test days as training:
+The sweep's scores, on the same test days as v2's training below:
 
 | Features | MAE |
 |---|---|
-| weather | 1.94 |
-| weather and weekend flag | 0.77 |
-| plus yesterday's PM2.5 | 0.75 |
+| weather | 1.89 |
+| weather and weekend flag | 0.78 |
+| plus yesterday's PM2.5 | 0.76 |
 | plus the two days before | 0.77 |
 | plus the three days before | 0.76 |
 
-The sweep keeps adding features while each one lowers the error by at least 5%. The weekend flag cuts the error by about 60%. Yesterday's PM2.5 then lowers it by less than 3%, so the sweep stops there, and v2 is the weather and the weekend flag.
+The sweep keeps adding features while each one lowers the error by at least 5%. The weekend flag cuts the error by about 60%, because the simulation raises PM2.5 on weekdays. Yesterday's PM2.5 then lowers it by less than 3%, so the sweep stops there, and v2 is the weather and the weekend flag.
 
 #### Past PM2.5 readings
 
@@ -389,10 +338,10 @@ A forecast for day D+N can use a reading from N days before it at best. The swee
 
 | Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
-| without the reading | 0.76 | 0.83 | 0.86 | 0.85 | 0.93 | 0.96 | 0.94 |
-| with the reading | 0.77 | 0.81 | 0.87 | 0.82 | 0.94 | 0.88 | 0.95 |
+| without the reading | 0.76 | 0.83 | 0.87 | 0.85 | 0.95 | 0.92 | 0.93 |
+| with the reading | 0.74 | 0.80 | 0.86 | 0.85 | 0.88 | 0.89 | 0.93 |
 
-The reading moves the error by 0.08 at most, up at some leads and down at others, with no consistent gain. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new. Leaving past readings out also avoids needing one model per lead, and a forecast that a missing or late reading would stop.
+The reading lowers the error by 0.03 or less at six of the seven leads, and by 0.07 at lead 5. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new. Leaving past readings out also avoids needing one model per lead, and a forecast that a missing or late reading would stop.
 
 ![MLflow showing the feature-sweep run: the MAE of each feature set, and the tag chosen: weather+weekend](images/mlflow-feature-sweep.png)
 
@@ -425,7 +374,7 @@ python -m airq.stores.feature_store --version v2
 
 ### Train v2
 
-Training v2 works as for v1, on the same test days, and scores the baseline again. v2 has a different feature set from the champion, so it becomes the `challenger`. Inference then predicts with both models, and writes both to `predictions`, told apart by `model_version`:
+Training v2 works as for v1, and scores the baseline again. Step 1 loaded two more days since v1 was trained, so v2's test days start one day later. v2 has a different feature set from the champion, so it becomes the `challenger`. Inference then predicts with both models, and writes both to `predictions`, told apart by `model_version`:
 
 ```bash
 python -m airq.training.train --version v2
@@ -444,13 +393,12 @@ The hindcast queries in [Score the forecasts](#score-the-forecasts) now return r
 
 #### Test scores
 
-These figures come from the same run as the sweep. v1 and v2 are XGBoost models with default settings. Training holds out the last 20% of days (146 days) for testing. v1 and v2 are trained in separate runs, on the same test days, and each run also scores the baseline on them:
+These figures come from the same run as the sweep. v1 and v2 are XGBoost models with default settings. Each training run holds out the last 20% of the days loaded so far for testing, and scores the baseline on the same days: 146 days for v1, and 147 for v2, which is trained after Step 1 loaded two more days:
 
-| Model | MAE |
-|---|---|
-| baseline | 3.70 |
-| v1 | 1.95 |
-| v2 | 0.77 |
+| Model | MAE | Baseline on the same days |
+|---|---|---|
+| v1 | 1.86 | 3.70 |
+| v2 | 0.77 | 3.75 |
 
 v1's error is well below the baseline's. PM2.5 follows the weather, and the forecast sees the weather change before it happens.
 
@@ -462,10 +410,10 @@ The backtest predicts seven days ahead from each of 60 past dates. All 60 fall i
 
 | Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
-| v1 | 1.81 | 1.95 | 1.66 | 1.63 | 2.01 | 1.88 | 2.09 |
-| v2 | 0.91 | 0.90 | 0.99 | 0.75 | 1.14 | 1.12 | 1.22 |
+| v1 | 1.67 | 1.70 | 1.58 | 1.34 | 1.89 | 1.70 | 2.15 |
+| v2 | 0.94 | 0.93 | 0.96 | 0.72 | 1.02 | 0.99 | 1.05 |
 
-v2 has the lower error at every lead. Its error mostly grows with the lead, because a weather forecast is less accurate further ahead. v1's error shows no clear trend.
+v2 has the lower error at every lead. Over 30 days, neither model's error grows steadily with the lead.
 
 ### Promote v2
 
@@ -504,7 +452,7 @@ Both tabs use the same queries, in [`reports.py`](airq/app/reports.py), so a num
 python -m airq.app.ui
 ```
 
-Open http://127.0.0.1:8090. The header shows the model versions in use. To use another Ollama model that supports tool calls, pull it and start the app with `AIRQ_MODEL=<model> python -m airq.app.ui`.
+Open [http://127.0.0.1:8090](http://127.0.0.1:8090). The header shows the model versions in use. To use another Ollama model that supports tool calls, pull it and start the app with `AIRQ_MODEL=<model> python -m airq.app.ui`.
 
 ### Monitoring tab
 
@@ -516,7 +464,7 @@ Open http://127.0.0.1:8090. The header shows the model versions in use. To use a
 
 ### Assistant tab
 
-Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with three tools: `get_forecast`, `get_observed` and `get_model_error`. The model answers each question by calling one of them, so every number comes from the data ([Concepts](docs/concepts.md#language-models-with-tools) explains how). The agent is in [`assistant.py`](airq/app/assistant.py).
+Type a question and press Enter. The chat is a [Strands](https://strandsagents.com/) agent with four tools: `get_forecast`, `compare_forecast`, `get_observed` and `get_model_error`. The model answers each question by calling one of them, so every number comes from the data ([Concepts](docs/concepts.md#language-models-with-tools) explains how). The agent is in [`assistant.py`](airq/app/assistant.py).
 
 Questions it answers well:
 
@@ -582,11 +530,11 @@ The steps map onto them in the same order:
 
 Registering the features with `python -m airq.stores.feature_store` also stays a terminal command, before each training step. Inference has no step of its own, because Airflow starts it after each daily run and each training run.
 
-In the Airflow UI at http://127.0.0.1:8085 (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_features` is first unpaused, it runs straight away for the most recent day.
+In the Airflow UI at [http://127.0.0.1:8085](http://127.0.0.1:8085) (`user` / `password`), the DAGs appear with the tag `airq`. New DAGs start paused: unpause one, then trigger it. When `airq_features` is first unpaused, it runs straight away for the most recent day.
 
 ![Airflow listing the three DAGs tagged airq, airq_features, airq_inference and airq_training, each with successful runs](images/airflow-airq-dags.png)
 
-The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote:
+The same from the terminal, in this order. Wait for each run to show `success` before you start the next, because each one reads what the one before it wrote. `dags unpause` prints a table that still shows `is_paused` as `True`; `docker exec airflow airflow dags list` shows `False` afterwards, and the DAG runs:
 
 ```bash
 # 1. the backfill; the scheduled run for yesterday goes first, then this one

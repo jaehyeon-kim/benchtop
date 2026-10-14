@@ -24,10 +24,10 @@ import logging
 import matplotlib
 import matplotlib.pyplot as plt
 import mlflow
-import numpy as np
 import pandas as pd
 from mlflow.models import infer_signature
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor, plot_importance
 
 from airq.core.config import EXPERIMENT, MODEL_NAME, TABLES
@@ -45,22 +45,6 @@ logger = logging.getLogger(
 _TEST_FRACTION = 0.2
 
 
-def split(frame: pd.DataFrame, test_fraction: float = _TEST_FRACTION):
-    """
-    Splits the rows in time order, keeping the later days for testing.
-
-    Args:
-        frame (pd.DataFrame): The training frame, with an `event_timestamp` column.
-        test_fraction (float): The share of days kept for testing. The default is 0.2.
-
-    Returns:
-        tuple[pd.DataFrame, pd.DataFrame]: The training rows and the test rows.
-    """
-    frame = frame.sort_values("event_timestamp").reset_index(drop=True)
-    cut = int(len(frame) * (1 - test_fraction))
-    return frame.iloc[:cut], frame.iloc[cut:]
-
-
 def scores(actual, predicted) -> dict[str, float]:
     """
     Scores predictions against the measured values.
@@ -75,7 +59,7 @@ def scores(actual, predicted) -> dict[str, float]:
     """
     return {
         "mae": float(mean_absolute_error(actual, predicted)),
-        "rmse": float(np.sqrt(mean_squared_error(actual, predicted))),
+        "rmse": float(root_mean_squared_error(actual, predicted)),
         "r2": float(r2_score(actual, predicted)),
     }
 
@@ -90,9 +74,9 @@ def training_frame(
     Builds the training frame: one row per day, with its label, baseline and features.
 
     It reads the labels from `daily_air_quality` and asks Feast for the features at
-    `lead`. Rows with a missing feature are dropped. The first day is one of them,
-    because no forecast was issued the day before it. The feature columns are converted
-    to floats.
+    `lead`. Rows with a missing feature are dropped: at lead N, the first N-1 days have
+    no forecast, because none was issued before the backfill's first day. The feature
+    columns are converted to floats.
 
     Args:
         features (list[str]): The Feast feature references, such as
@@ -123,8 +107,8 @@ def training_frame(
     frame = (
         store().get_historical_features(entity_df=entities, features=features).to_df()
     )
-    # The first day has no forecast issued the day before it. Features are
-    # floats, so the model's input schema accepts integer and float columns alike.
+    # Days with no forecast at this lead. Features are floats, so the model's input
+    # schema accepts integer and float columns alike.
     frame = frame.dropna(subset=columns)
     return frame.astype({column: "float64" for column in columns})
 
@@ -132,6 +116,9 @@ def training_frame(
 def fit_and_score(frame: pd.DataFrame, columns: list[str]):
     """
     Fits a model on the earlier days, and scores it and the baseline on the last days.
+
+    The rows are sorted by day and split without shuffling, so the last 20% of the days
+    are the test days.
 
     Args:
         frame (pd.DataFrame): The training frame from `training_frame`.
@@ -141,7 +128,9 @@ def fit_and_score(frame: pd.DataFrame, columns: list[str]):
         tuple: The model, its training rows, its test rows, and the scores of the model
             and of the baseline (`baseline_mae` and so on).
     """
-    train_set, test_set = split(frame)
+    train_set, test_set = train_test_split(
+        frame.sort_values("event_timestamp"), test_size=_TEST_FRACTION, shuffle=False
+    )
     model = XGBRegressor().fit(train_set[columns], train_set["pm2_5"])
     metrics = {
         **scores(test_set["pm2_5"], model.predict(test_set[columns])),

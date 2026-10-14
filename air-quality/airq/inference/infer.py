@@ -18,7 +18,7 @@ Run: python -m airq.inference.infer --as-of "3 days ago"   (default: yesterday, 
 
 import argparse
 import logging
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, timedelta
 
 import mlflow
 import pandas as pd
@@ -56,7 +56,7 @@ def _entity_rows(as_of: date) -> pd.DataFrame:
         pd.DataFrame: One row per lead, with `location_id`, `lead_days`,
             `event_timestamp` and `day`.
     """
-    days = [datetime.combine(as_of + timedelta(days=n), time(), UTC) for n in LEADS]
+    days = pd.date_range(as_of + timedelta(days=1), periods=len(LEADS), tz="UTC")
     return pd.DataFrame(
         {
             "location_id": STATION,

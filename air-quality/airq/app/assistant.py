@@ -3,7 +3,8 @@
 The Assistant tab in `airq.app.ui` chats with it. The model runs locally in Ollama,
 and `AIRQ_MODEL` names it, so no data leaves the machine.
 
-The agent has three tools: `get_forecast`, `get_observed` and `get_model_error`.
+The agent has four tools: `get_forecast`, `compare_forecast`, `get_observed` and
+`get_model_error`.
 They use the same queries as the Monitoring tab, so the answers match the charts.
 
 The tools are written for a small model. They accept days in the user's own words,
@@ -11,14 +12,15 @@ such as "tomorrow" or "saturday", and work out the date in Python. They return a
 few short lines with any comparison already made, so the model only copies numbers.
 """
 
-from datetime import date
+import re
+from datetime import date, timedelta
 
 from strands import Agent, tool
 from strands.models.ollama import OllamaModel
 
 from airq.app import reports
 from airq.core.config import ASSISTANT_MODEL, CHALLENGER, CHAMPION, OLLAMA_HOST
-from airq.core.days import FORMS, WEEKDAYS, resolve
+from airq.core.days import FORMS, resolve
 from airq.core.days import today as utc_today
 
 _PROMPT = """You answer questions about the daily PM2.5 forecast for one simulated
@@ -46,7 +48,22 @@ def _label(day: date) -> str:
     Returns:
         str: The date and its weekday, such as "2026-09-26 (Saturday)".
     """
-    return f"{day.isoformat()} ({WEEKDAYS[day.weekday()].capitalize()})"
+    return f"{day.isoformat()} ({day:%A})"
+
+
+def _latest(model: str, today: date):
+    """
+    Returns one model's latest forecast made by `today`.
+
+    Args:
+        model (str): The alias of the model, "champion" or "challenger".
+        today (date): The date the forecast must have been made by.
+
+    Returns:
+        pd.DataFrame: One row per day predicted. Empty if the model has no forecast.
+    """
+    rows = reports.forecast(today)
+    return rows[rows["alias"] == model] if not rows.empty else rows
 
 
 def forecast_text(day: str, model: str, today: date) -> str:
@@ -65,8 +82,7 @@ def forecast_text(day: str, model: str, today: date) -> str:
     Raises:
         ValueError: If `day` cannot be read as a day.
     """
-    rows = reports.forecast(today)
-    rows = rows[rows["alias"] == model] if not rows.empty else rows
+    rows = _latest(model, today)
     if rows.empty:
         return f"No {model} forecast has been made yet."
     head = f"{model.capitalize()} (model version {rows['model_version'].iloc[0]}), forecast made on {rows['as_of'].iloc[0]}:"  # fmt: skip
@@ -78,6 +94,63 @@ def forecast_text(day: str, model: str, today: date) -> str:
         rows = chosen
     lines = [f"{_label(r.day)}: {r.pm2_5} µg/m³" for r in rows.itertuples()]
     return "\n".join([head, *lines])
+
+
+def compare_text(day: str, other: str, model: str, today: date) -> str:
+    """
+    Compares one model's latest forecast for two days, and says which is higher.
+
+    A small model gets such comparisons wrong when it makes them itself, so the
+    answer states the result.
+
+    Args:
+        day (str): The first day, in the user's words.
+        other (str): The day to compare it with, in the same forms.
+        model (str): The alias of the model, "champion" or "challenger".
+        today (date): The date that phrases such as "tomorrow" count from.
+
+    Returns:
+        str: Both values and which day is higher. If the forecast does not cover a
+            day, the days it does cover.
+
+    Raises:
+        ValueError: If `day` or `other` cannot be read as a day.
+    """
+    rows = _latest(model, today)
+    if rows.empty:
+        return f"No {model} forecast has been made yet."
+    first, second = resolve(day, today, forward=True), resolve(other, today, forward=True)  # fmt: skip
+    values = dict(zip(rows["day"], rows["pm2_5"]))
+    missing = [_label(d) for d in (first, second) if d not in values]
+    if missing:
+        return f"The forecast covers {_label(rows['day'].min())} to {_label(rows['day'].max())}, not {' or '.join(missing)}."  # fmt: skip
+    a, b = values[first], values[second]
+    if a == b:
+        result = "They are the same."
+    else:
+        high, low = (first, second) if a > b else (second, first)
+        result = f"{_label(high)} is higher than {_label(low)}, by {round(abs(a - b), 2)} µg/m³."  # fmt: skip
+    return f"{_label(first)}: {a} µg/m³. {_label(second)}: {b} µg/m³. {result}"
+
+
+_NUMBERS = {w: n for n, w in enumerate(["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"], 1)}  # fmt: skip
+
+
+def _last_days(phrase: str) -> int:
+    """
+    Reads how many days a phrase such as "last 7 days" or "past_seven_days" covers.
+
+    Args:
+        phrase (str): The day phrase a tool received.
+
+    Returns:
+        int: The number of days, or 0 if the phrase is not of that form.
+    """
+    words = re.sub(r"[_\s]+", " ", phrase.lower()).strip()
+    match = re.fullmatch(r"(?:the )?(?:last|past) (\w+) days?", words)
+    if not match:
+        return 0
+    return int(match[1]) if match[1].isdigit() else _NUMBERS.get(match[1], 0)
 
 
 def observed_text(day: str, until: str, today: date) -> str:
@@ -99,15 +172,19 @@ def observed_text(day: str, until: str, today: date) -> str:
     Raises:
         ValueError: If `day` or `until` cannot be read as a day.
     """
-    start = resolve(day or "yesterday", today)
-    end = resolve(until, today) if until else start
+    if n := _last_days(day):  # "last 7 days": the seven days up to yesterday
+        start, end = today - timedelta(days=n), today - timedelta(days=1)
+    else:
+        start = resolve(day or "yesterday", today)
+        end = resolve(until, today) if until else start
     start, end = min(start, end), max(start, end)
     rows = reports.observed(start, end)
     if rows.empty:
         last = reports.last_measured_day()
         if last is None:
             return "No readings have been measured yet."
-        return f"No reading for {_label(start)} to {_label(end)}. Readings run to {_label(last)}."  # fmt: skip
+        days = _label(start) if start == end else f"{_label(start)} to {_label(end)}"
+        return f"No reading for {days}. Readings run to {_label(last)}."
     lines = [f"{_label(r.day)}: {r.pm2_5} µg/m³" for r in rows.itertuples()]
     if len(rows) > 1:
         high = rows.loc[rows["pm2_5"].idxmax()]
@@ -176,6 +253,24 @@ def get_forecast(day: str = "", model: str = CHAMPION) -> str:
 
 
 @tool
+def compare_forecast(day: str, other: str, model: str = CHAMPION) -> str:
+    """
+    Compares the latest PM2.5 forecast for two days, and says which day is higher.
+
+    Use it for any question that compares two days, such as "will Saturday be higher
+    than tomorrow?".
+
+    Args:
+        day (str): The first day, in the user's words, such as "saturday" or
+            "tomorrow".
+        other (str): The day to compare it with, in the same forms.
+        model (str): "champion" for the model in use (the default), or "challenger".
+    """
+    model = model if model in (CHAMPION, CHALLENGER) else CHAMPION
+    return _safely(lambda: compare_text(day, other, model, utc_today()))
+
+
+@tool
 def get_observed(day: str = "", until: str = "") -> str:
     """
     Gets the measured daily mean PM2.5 for one day or for a range of days.
@@ -184,7 +279,8 @@ def get_observed(day: str = "", until: str = "") -> str:
 
     Args:
         day (str): The day, or the first day of a range, in the user's words, such
-            as "yesterday", "3 days ago", "last monday" or YYYY-MM-DD.
+            as "yesterday", "last monday" or YYYY-MM-DD. For a recent range, pass
+            it as "last 7 days" and leave `until` empty.
         until (str): The last day of a range, in the same forms. Leave empty for
             one day.
     """
@@ -229,13 +325,12 @@ def build(**kwargs) -> Agent:
         **kwargs: Passed on to `Agent`, such as `callback_handler`.
 
     Returns:
-        Agent: The agent, with the three tools.
+        Agent: The agent, with the four tools.
     """
     today = utc_today()
-    weekday = WEEKDAYS[today.weekday()].capitalize()
     return Agent(
         model=_model(),
-        tools=[get_forecast, get_observed, get_model_error],
-        system_prompt=_PROMPT.format(today=today, weekday=weekday),
+        tools=[get_forecast, compare_forecast, get_observed, get_model_error],
+        system_prompt=_PROMPT.format(today=today, weekday=f"{today:%A}"),
         **kwargs,
     )

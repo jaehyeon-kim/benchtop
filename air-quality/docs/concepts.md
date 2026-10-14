@@ -33,7 +33,7 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 
 - **Feature:** one input a model learns from, such as `temperature_2m`.
 - **Feature group:** a table of features, like `daily_weather` above.
-- **Entity:** what a row is about. Here: the station (`location_id`), plus how many days ahead the forecast was made (`lead_days`).
+- **Entity:** a key that Feast uses, with the event time below, to find a row. Here there are two. The station (`location_id`) says where the forecast is for. The lead (`lead_days`) is needed because `daily_weather` has seven forecasts for each day, one for each lead, and all seven have the same event time. Without the lead, Feast could not tell them apart. Training asks for lead 1, and inference on day D asks for lead N on day D+N.
 - **Event time:** the time the values describe. In the row above it is `day`, 20 September: the forecast is about the weather on 20 September. It is not when the forecast was made (`issued_on`, 19 September). Feast finds rows by their event time.
 - **Feature view:** a named set of features that a model reads. `weather_v1` picks the three weather columns above, and v1 reads only that view. `calendar_v2` holds the weekend flag, and v2 reads both views. A feature view stores no data; it only says which columns to read.
 - **Label:** the answer the model learns to predict: here `pm2_5`, the day's measured air pollution, from the `daily_air_quality` table. It is kept apart from the features and joined to them only when training data is built.
@@ -133,7 +133,7 @@ Here readings arrive the next day, so the hindcast measures error daily, and the
 
 A language model cannot see the project's tables. Instead it is given **tools**: named functions it may call. For each question, the model picks a tool and its inputs, the code runs it, and the model writes its answer from the result.
 
-Here the assistant has three tools, over the same queries the Monitoring tab uses.
+Here the assistant has four tools, over the same queries the Monitoring tab uses. Each returns its answer with any comparison already made, because a small model often compares numbers wrongly when it does it itself.
 
 The loop that passes each tool result back to the model is the **agent**, built here with Strands ([`assistant.py`](../airq/app/assistant.py)).
 

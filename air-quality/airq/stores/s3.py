@@ -5,14 +5,14 @@ import os
 import boto3
 
 
-def client():
+def resource():
     """
-    Returns an S3 client for SeaweedFS, with the settings `airq.core.config` gives PyIceberg.
+    Returns an S3 resource for SeaweedFS, with the settings `airq.core.config` gives PyIceberg.
 
     Returns:
-        botocore.client.S3: The client.
+        boto3.resources.base.ServiceResource: The S3 resource.
     """
-    return boto3.client(
+    return boto3.resource(
         "s3",
         endpoint_url=os.environ["PYICEBERG_CATALOG__ODCTL__S3__ENDPOINT"],
         aws_access_key_id=os.environ["PYICEBERG_CATALOG__ODCTL__S3__ACCESS_KEY_ID"],
@@ -23,35 +23,19 @@ def client():
     )
 
 
-def keys(s3, bucket: str, prefix: str) -> list[str]:
+def delete_prefix(s3, bucket: str, prefix: str) -> int:
     """
-    Lists every object key under a prefix.
+    Deletes every object under a prefix.
+
+    boto3 lists the objects a page at a time and deletes each page in one request.
 
     Args:
-        s3 (botocore.client.S3): The S3 client.
+        s3 (boto3.resources.base.ServiceResource): The S3 resource.
         bucket (str): The bucket.
         prefix (str): The key prefix.
 
     Returns:
-        list[str]: The keys, across every page of the listing.
-    """
-    pages = s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
-    return [o["Key"] for page in pages for o in page.get("Contents", [])]
-
-
-def delete(s3, bucket: str, keys: list[str]) -> int:
-    """
-    Deletes objects, a thousand at a time, which is the most one request takes.
-
-    Args:
-        s3 (botocore.client.S3): The S3 client.
-        bucket (str): The bucket.
-        keys (list[str]): The keys to delete.
-
-    Returns:
         int: How many objects were deleted.
     """
-    for i in range(0, len(keys), 1000):
-        batch = [{"Key": k} for k in keys[i : i + 1000]]
-        s3.delete_objects(Bucket=bucket, Delete={"Objects": batch, "Quiet": True})
-    return len(keys)
+    responses = s3.Bucket(bucket).objects.filter(Prefix=prefix).delete()
+    return sum(len(r.get("Deleted", [])) for r in responses)

@@ -78,7 +78,7 @@ odctl up postgres                   # start PostgreSQL
 ┃ Container       ┃ Service   ┃ State   ┃ Health  ┃ Ports             ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
 │ odctl-init-deps │ init-deps │ exited  │ -       │ -                 │
-│ postgres        │ postgres  │ running │ healthy │ 5432 ➡️  5432/tcp │
+│ postgres        │ postgres  │ running │ healthy │ 5432 → 5432/tcp   │
 └─────────────────┴───────────┴─────────┴─────────┴───────────────────┘
 ```
 

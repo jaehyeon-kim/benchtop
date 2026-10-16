@@ -78,17 +78,17 @@ odctl up kafka-lite flink-lite postgres
 ┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Container           ┃ Service       ┃ State   ┃ Health  ┃ Ports                                                   ┃
 ┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ connect             │ connect       │ running │ -       │ 8083 ➡️  8083/tcp                                       │
-│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 ➡️  8081/tcp                                       │
-│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 ➡️  8083/tcp                                       │
+│ connect             │ connect       │ running │ -       │ 8083 → 8083/tcp                                         │
+│ flink-jobmanager    │ jobmanager    │ running │ healthy │ 8082 → 8081/tcp                                         │
+│ flink-sql-gateway   │ sql-gateway   │ running │ -       │ 8084 → 8083/tcp                                         │
 │ flink-taskmanager-a │ taskmanager-a │ running │ -       │ -                                                       │
-│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 ➡️  8181/tcp                                       │
-│ kafka               │ kafka         │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
-│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 ➡️  8080/tcp                                       │
-│ karapace            │ karapace      │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ iceberg-catalog     │ catalog       │ running │ healthy │ 8181 → 8181/tcp                                         │
+│ kafka               │ kafka         │ running │ -       │ 9092 → 9092/tcp                                         │
+│ kafka-ui            │ kafka-ui      │ running │ -       │ 8086 → 8080/tcp                                         │
+│ karapace            │ karapace      │ running │ healthy │ 8081 → 8081/tcp                                         │
 │ odctl-init-deps     │ init-deps     │ exited  │ -       │ -                                                       │
-│ postgres            │ postgres      │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
-│ seaweed             │ seaweed       │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ postgres            │ postgres      │ running │ healthy │ 5432 → 5432/tcp                                         │
+│ seaweed             │ seaweed       │ running │ healthy │ 8333 → 8333/tcp, 8889 → 8888/tcp, 9333 → 9333/tcp       │
 │ seaweed-init        │ seaweed-init  │ exited  │ -       │ -                                                       │
 └─────────────────────┴───────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
 ```

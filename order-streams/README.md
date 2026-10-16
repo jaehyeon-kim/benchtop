@@ -69,10 +69,10 @@ odctl up kafka-lite
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Container       ┃ Service   ┃ State   ┃ Health  ┃ Ports                                  ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ connect         │ connect   │ running │ -       │ 8083 ➡️  8083/tcp                      │
-│ kafka           │ kafka     │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp │
-│ kafka-ui        │ kafka-ui  │ running │ -       │ 8086 ➡️  8080/tcp                      │
-│ karapace        │ karapace  │ running │ healthy │ 8081 ➡️  8081/tcp                      │
+│ connect         │ connect   │ running │ -       │ 8083 → 8083/tcp                        │
+│ kafka           │ kafka     │ running │ -       │ 9092 → 9092/tcp                        │
+│ kafka-ui        │ kafka-ui  │ running │ -       │ 8086 → 8080/tcp                        │
+│ karapace        │ karapace  │ running │ healthy │ 8081 → 8081/tcp                        │
 │ odctl-init-deps │ init-deps │ exited  │ -       │ -                                      │
 └─────────────────┴───────────┴─────────┴─────────┴────────────────────────────────────────┘
 ```

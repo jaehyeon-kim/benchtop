@@ -113,18 +113,18 @@ odctl up catalog feast mlflow airflow trino
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Container       ┃ Service      ┃ State   ┃ Health  ┃ Ports                                                   ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ airflow         │ airflow      │ running │ healthy │ 8085 ➡️  8080/tcp                                       │
-│ feast-serve     │ feast-serve  │ running │ healthy │ 6566 ➡️  6566/tcp                                       │
-│ feast-ui        │ feast-ui     │ running │ healthy │ 8890 ➡️  8888/tcp                                       │
-│ iceberg-catalog │ catalog      │ running │ -       │ 8181 ➡️  8181/tcp                                       │
-│ mlflow          │ mlflow       │ running │ healthy │ 5004 ➡️  5000/tcp                                       │
-│ mlflow-serve    │ mlflow-serve │ running │ healthy │ 5003 ➡️  5003/tcp                                       │
+│ airflow         │ airflow      │ running │ healthy │ 8085 → 8080/tcp                                         │
+│ feast-serve     │ feast-serve  │ running │ healthy │ 6566 → 6566/tcp                                         │
+│ feast-ui        │ feast-ui     │ running │ healthy │ 8890 → 8888/tcp                                         │
+│ iceberg-catalog │ catalog      │ running │ -       │ 8181 → 8181/tcp                                         │
+│ mlflow          │ mlflow       │ running │ healthy │ 5004 → 5000/tcp                                         │
+│ mlflow-serve    │ mlflow-serve │ running │ healthy │ 5003 → 5003/tcp                                         │
 │ odctl-init-deps │ init-deps    │ exited  │ -       │ -                                                       │
-│ postgres        │ postgres     │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
-│ seaweed         │ seaweed      │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ postgres        │ postgres     │ running │ healthy │ 5432 → 5432/tcp                                         │
+│ seaweed         │ seaweed      │ running │ healthy │ 8333 → 8333/tcp, 8889 → 8888/tcp, 9333 → 9333/tcp       │
 │ seaweed-init    │ seaweed-init │ exited  │ -       │ -                                                       │
-│ trino           │ trino        │ running │ healthy │ 8080 ➡️  8080/tcp                                       │
-│ valkey          │ valkey       │ running │ healthy │ 6379 ➡️  6379/tcp                                       │
+│ trino           │ trino        │ running │ healthy │ 8080 → 8080/tcp                                         │
+│ valkey          │ valkey       │ running │ healthy │ 6379 → 6379/tcp                                         │
 └─────────────────┴──────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
 ```
 

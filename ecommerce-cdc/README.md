@@ -74,13 +74,13 @@ odctl up postgres kafka-lite storage
 ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Container       ┃ Service      ┃ State   ┃ Health  ┃ Ports                                                   ┃
 ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ connect         │ connect      │ running │ -       │ 8083 ➡️  8083/tcp                                       │
-│ kafka           │ kafka        │ running │ -       │ 29092 ➡️  29092/tcp, 9092 ➡️  9092/tcp                  │
-│ kafka-ui        │ kafka-ui     │ running │ -       │ 8086 ➡️  8080/tcp                                       │
-│ karapace        │ karapace     │ running │ healthy │ 8081 ➡️  8081/tcp                                       │
+│ connect         │ connect      │ running │ -       │ 8083 → 8083/tcp                                         │
+│ kafka           │ kafka        │ running │ -       │ 9092 → 9092/tcp                                         │
+│ kafka-ui        │ kafka-ui     │ running │ -       │ 8086 → 8080/tcp                                         │
+│ karapace        │ karapace     │ running │ healthy │ 8081 → 8081/tcp                                         │
 │ odctl-init-deps │ init-deps    │ exited  │ -       │ -                                                       │
-│ postgres        │ postgres     │ running │ healthy │ 5432 ➡️  5432/tcp                                       │
-│ seaweed         │ seaweed      │ running │ healthy │ 8333 ➡️  8333/tcp, 8889 ➡️  8888/tcp, 9333 ➡️  9333/tcp │
+│ postgres        │ postgres     │ running │ healthy │ 5432 → 5432/tcp                                         │
+│ seaweed         │ seaweed      │ running │ healthy │ 8333 → 8333/tcp, 8889 → 8888/tcp, 9333 → 9333/tcp       │
 │ seaweed-init    │ seaweed-init │ exited  │ -       │ -                                                       │
 └─────────────────┴──────────────┴─────────┴─────────┴─────────────────────────────────────────────────────────┘
 ```

@@ -1,6 +1,6 @@
 """Changes a simulation parameter while the simulation runs.
 
-It sends the new value to the control topic, where dynamic-des's Kafka ingress updates
+It sends the new value to the control topic, where desflow's Kafka ingress updates
 the registry, so the next arrival, wait or chance drawn uses it.
 
 Run: python -m ecommerce.simulation.control ecommerce.resources.pickers.current_cap 1
@@ -9,7 +9,7 @@ Run: python -m ecommerce.simulation.control ecommerce.resources.pickers.current_
 import argparse
 import asyncio
 
-from dynamic_des import KafkaAdminConnector
+from desflow import KafkaAdminConnector
 
 from ecommerce.core.config import (
     ARRIVALS,

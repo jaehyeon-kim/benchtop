@@ -1,4 +1,4 @@
-"""Runs the shop in dynamic-des and writes every row it produces to PostgreSQL.
+"""Runs the shop in desflow and writes every row it produces to PostgreSQL.
 
 Visitors arrive at random, and each visit is a process that views pages and may buy. Each
 order is then a process of its own: it queues for a warehouse picker, is packed, shipped
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from dynamic_des import (
+from desflow import (
     KafkaAdminConnector,
     KafkaIngress,
     PostgresEgress,

@@ -4,8 +4,8 @@ from typing import Any
 
 import httpx
 from confluent_kafka.admin import AdminClient
-from dynamic_des import KafkaAdminConnector
-from dynamic_des.connectors.egress.kafka import ConfluentAvroSerializer
+from desflow import KafkaAdminConnector
+from desflow.connectors.egress.kafka import ConfluentAvroSerializer
 
 from leaderboard.core.config import (
     BOOTSTRAP_SERVERS,
@@ -19,9 +19,9 @@ from leaderboard.core.models import AVRO_SCHEMA
 
 class ScoreSerializer(ConfluentAvroSerializer):
     """
-    Encodes only the score event in Avro, without dynamic-des's envelope.
+    Encodes only the score event in Avro, without desflow's envelope.
 
-    dynamic-des sends each event as `{"sim_ts", "timestamp", "key", "value"}`, and
+    desflow sends each event as `{"sim_ts", "timestamp", "key", "value"}`, and
     Flink's source table expects the event's own fields, so this encodes `value` only.
     """
 
@@ -31,11 +31,11 @@ class ScoreSerializer(ConfluentAvroSerializer):
 
     def serialize(self, topic: str, data: Any) -> bytes:
         """
-        Encodes the event inside a dynamic-des message.
+        Encodes the event inside a desflow message.
 
         Args:
             topic (str): The Kafka topic, which names the registry subject.
-            data (Any): The dynamic-des message, with the event under `value`.
+            data (Any): The desflow message, with the event under `value`.
 
         Returns:
             bytes: The Avro-encoded event.

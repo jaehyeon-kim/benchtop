@@ -17,9 +17,9 @@ Each score is a message in the topic `game-scores`. A topic is split into **part
 
 A **discrete-event simulation** models a system as events at points in time, such as "a player arrives", and moves the clock from one event to the next. Each actor is a **process** that waits for an event, then carries on.
 
-The model is in [`run.py`](../leaderboard/simulation/run.py), built with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and the teams in [`game.py`](../leaderboard/simulation/game.py). It runs in real time (`factor=1.0`): a simulated second takes a real second.
+The model is in [`run.py`](../leaderboard/simulation/run.py), built with [desflow](https://github.com/jaehyeon-kim/desflow), and the teams in [`game.py`](../leaderboard/simulation/game.py). It runs in real time (`factor=1.0`): a simulated second takes a real second.
 
-| Part of the game | dynamic-des part | Default |
+| Part of the game | desflow part | Default |
 |---|---|---|
 | Players arrive at random | an **arrival**, `player`, with exponential gaps | one every 2 seconds on average |
 | A player's session | a **process** per player, started for each arrival | lognormal, 5 minutes on average |
@@ -33,7 +33,7 @@ An **arrival** draws the time until the next arrival, and a **service** draws ho
 
 A session joins a team with room, or forms a new one: a team holds up to 15 players, and one arrival in ten forms a new team anyway. The player plays rounds, each scoring 0 to 20, until the session ends, then leaves the team. An empty team dissolves.
 
-Every parameter is kept in dynamic-des's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. [`leaderboard.simulation.control`](../leaderboard/simulation/control.py) sends a new value to `game-control`, and the ingress writes it into the registry.
+Every parameter is kept in desflow's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. [`leaderboard.simulation.control`](../leaderboard/simulation/control.py) sends a new value to `game-control`, and the ingress writes it into the registry.
 
 ## Avro and the schema registry
 

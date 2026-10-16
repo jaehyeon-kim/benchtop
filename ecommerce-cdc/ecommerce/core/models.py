@@ -1,6 +1,6 @@
 """The rows of the six tables, one pydantic model each, with bounds on their values.
 
-Times are ISO 8601 text in UTC: dynamic-des publishes rows as JSON-friendly values, and
+Times are ISO 8601 text in UTC: desflow publishes rows as JSON-friendly values, and
 asyncpg rejects a string for a timestamp column.
 """
 

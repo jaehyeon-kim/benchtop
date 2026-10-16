@@ -1,8 +1,8 @@
-"""Runs the dynamic-des simulation that writes all four tables, for the backfill and the daily run.
+"""Runs the desflow simulation that writes all four tables, for the backfill and the daily run.
 
 Each simulated hour publishes that hour's forecasts and reading. When a day ends, it
 also publishes that day's daily weather and air quality, computed from the same hourly
-rows. dynamic-des's Iceberg writer sends each row to its table: the backfill appends
+rows. desflow's Iceberg writer sends each row to its table: the backfill appends
 into new tables, and the daily run upserts on each table's keys, so running a day again
 replaces it.
 """
@@ -10,7 +10,7 @@ replaces it.
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 
-from dynamic_des import IcebergStorageEgress, SimulationContext
+from desflow import IcebergStorageEgress, SimulationContext
 from pydantic import BaseModel
 
 from airq.core.config import TABLES
@@ -33,7 +33,7 @@ def route(r: dict) -> str:
     """
     Returns the table for a published event, and turns the event back into a row.
 
-    dynamic-des publishes each row as `model_dump(mode="json")`, so its timestamps
+    desflow publishes each row as `model_dump(mode="json")`, so its timestamps
     arrive as strings. Validating the row with its model turns them back into datetimes.
     The row replaces the contents of `r`, because the egress writes the same dict it
     passes here.
@@ -112,7 +112,7 @@ def simulate(
     previous: list[Observation] | None = None,
 ) -> None:
     """
-    Simulates `hours` hours from `start` and writes every row through dynamic-des.
+    Simulates `hours` hours from `start` and writes every row through desflow.
 
     Args:
         cat: The Iceberg catalog.
@@ -130,7 +130,7 @@ def simulate(
 
     @app.telemetry_loop(interval=_HOUR)
     def hourly(ctx):
-        # dynamic-des publishes a lag metric every simulated second by default,
+        # desflow publishes a lag metric every simulated second by default,
         # which is 63 million records over two years at factor=0.
         ctx.env.egress_lag_monitor_interval = _HOUR
         for row in publisher.step(next(records)):

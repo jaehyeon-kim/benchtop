@@ -3,8 +3,8 @@ from itertools import pairwise
 
 import numpy as np
 import pytest
-from dynamic_des import SimulationContext
-from dynamic_des.core.environment import DynamicRealtimeEnvironment
+from desflow import SimulationContext
+from desflow.core.environment import DynamicRealtimeEnvironment
 
 from leaderboard.core.config import SIM_ID
 from leaderboard.simulation.run import build

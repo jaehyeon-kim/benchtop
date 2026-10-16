@@ -15,7 +15,7 @@ More detail is in two documents:
 
 Four parts do the work:
 
-- **Simulation:** plays the game in real time with [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), and sends each score to the Kafka [topic](docs/concepts.md#kafka-basics) `game-scores`.
+- **Simulation:** plays the game in real time with [desflow](https://github.com/jaehyeon-kim/desflow), and sends each score to the Kafka [topic](docs/concepts.md#kafka-basics) `game-scores`.
 - **Flink jobs:** one per leaderboard. Each reads the topic and keeps its leaderboard up to date as scores arrive. A Flink SQL query of this kind never finishes: it keeps its result current for as long as it runs. [Concepts](docs/concepts.md#continuous-queries-and-dynamic-tables) explains how.
 - **PostgreSQL:** holds each leaderboard as a table with one row per rank.
 - **Dashboard:** reads the four tables and redraws them every 2 seconds.
@@ -42,7 +42,7 @@ The four leaderboards:
 
 | Tool | Role here |
 |---|---|
-| [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des) | simulates the game, sends the scores to Kafka, and reads parameter changes from Kafka while it runs |
+| [desflow](https://github.com/jaehyeon-kim/desflow) | simulates the game, sends the scores to Kafka, and reads parameter changes from Kafka while it runs ([docs](https://jaehyeon.me/desflow/)) |
 | Apache Kafka | carries the scores from the simulation to Flink |
 | Karapace | the schema registry: it stores the Avro schema of the scores, so each message carries only a short schema id |
 | Apache Flink | runs the four SQL jobs that compute the leaderboards |

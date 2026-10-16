@@ -41,7 +41,7 @@ To start again at any point, `python -m sales.stores.cleanup` removes everything
 
 | Tool | Role here |
 |---|---|
-| [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des) | simulates the shop, and writes every row to PostgreSQL |
+| [desflow](https://github.com/jaehyeon-kim/desflow) | simulates the shop, and writes every row to PostgreSQL ([docs](https://jaehyeon.me/desflow/)) |
 | PostgreSQL | stores the shop's four tables, and the table of live changes |
 | [FastAPI](https://fastapi.tiangolo.com/) | the WebSocket server |
 | [Streamlit](https://streamlit.io/) | the Python dashboard |
@@ -86,7 +86,7 @@ The code connects to PostgreSQL at `127.0.0.1:5432`. [`sales/core/config.py`](./
 
 ## Step 1: data producer
 
-The simulation is a model of the shop in [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des), a Python library for discrete-event simulation. It runs in real time: one simulated second takes one second. Start it in its own terminal:
+The simulation is a model of the shop in [desflow](https://github.com/jaehyeon-kim/desflow), a Python library for discrete-event simulation. It runs in real time: one simulated second takes one second. Start it in its own terminal:
 
 ```bash
 python -m sales.simulation.run      # runs until Ctrl + C; --minutes 10 stops it after ten minutes
@@ -96,7 +96,7 @@ It creates the `dashboard` schema and its tables, writes the 260 products, and t
 
 The model, in short:
 
-| Part of the shop | How it is modelled | dynamic-des feature |
+| Part of the shop | How it is modelled | desflow feature |
 |---|---|---|
 | Visitors arrive, four a second on average | a random arrival stream | `add_arrival` and `arrival_loop` |
 | A visitor views two to five pages, then may buy | a process with a wait per page | `spawn` and the `page_view` service time |

@@ -2,7 +2,7 @@ import io
 import json
 
 import fastavro
-from dynamic_des.connectors.egress.kafka import ConfluentAvroSerializer
+from desflow.connectors.egress.kafka import ConfluentAvroSerializer
 
 from leaderboard.core.models import AVRO_SCHEMA, ScoreEvent
 from leaderboard.stores.kafka import ScoreSerializer
@@ -11,7 +11,7 @@ EVENT = ScoreEvent(user_id="USR-000001", team_id="0000000001", team_name="Amber-
 
 
 def test_serializer_sends_only_the_event(monkeypatch):
-    """Verify that the serializer encodes dynamic-des's `value` only, not its envelope."""
+    """Verify that the serializer encodes desflow's `value` only, not its envelope."""
     sent = []
     monkeypatch.setattr(ConfluentAvroSerializer, "serialize", lambda self, topic, data: sent.append((topic, data)) or b"")  # fmt: skip
     ScoreSerializer().serialize("game-scores", {"sim_ts": 1.0, "timestamp": "t", "key": "k", "value": EVENT})  # fmt: skip

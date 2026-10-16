@@ -1,6 +1,6 @@
 """Changes a simulation parameter while the simulation runs.
 
-The new value goes to the control topic, where dynamic-des's Kafka ingress reads it and
+The new value goes to the control topic, where desflow's Kafka ingress reads it and
 updates the registry. The next arrival, round or share drawn uses it.
 Run: python -m leaderboard.simulation.control game.variables.robot_share 0.5
 """
@@ -8,7 +8,7 @@ Run: python -m leaderboard.simulation.control game.variables.robot_share 0.5
 import argparse
 import asyncio
 
-from dynamic_des import KafkaAdminConnector
+from desflow import KafkaAdminConnector
 
 from leaderboard.core.config import BOOTSTRAP_SERVERS, CONTROL_TOPIC
 

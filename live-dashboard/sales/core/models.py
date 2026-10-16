@@ -1,7 +1,7 @@
 """Rows of the four tables the dashboards read, one pydantic model each.
 
 Bounds check every row when it is built. Each model names its table in `table`.
-Timestamps are ISO strings in UTC, because dynamic-des publishes rows as JSON.
+Timestamps are ISO strings in UTC, because desflow publishes rows as JSON.
 """
 
 from typing import ClassVar, Literal

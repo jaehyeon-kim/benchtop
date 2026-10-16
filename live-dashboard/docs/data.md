@@ -2,7 +2,7 @@
 
 The tables the [live-dashboard](../README.md) simulation writes, and the records the WebSocket server sends. The tables are in the `dashboard` schema of odctl's PostgreSQL database `odctl`, created by [`postgres.py`](../sales/stores/postgres.py).
 
-Times are ISO 8601 text in UTC, because dynamic-des publishes rows as JSON-friendly values. A query casts them with `created_at::timestamptz` before comparing.
+Times are ISO 8601 text in UTC, because desflow publishes rows as JSON-friendly values. A query casts them with `created_at::timestamptz` before comparing.
 
 ## Shop tables
 

@@ -1,6 +1,6 @@
 """The store: this project's tables in odctl's PostgreSQL, and the dashboards' query.
 
-Timestamps are ISO strings, as dynamic-des publishes them, so queries cast them.
+Timestamps are ISO strings, as desflow publishes them, so queries cast them.
 """
 
 import asyncpg

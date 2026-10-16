@@ -57,7 +57,7 @@ A **grid** is the rectangle the axes are drawn in. By default, `grid.left`, `gri
 
 ## Discrete-event simulation
 
-A **discrete-event simulation** models a system as events at points in time: a visitor arrives, an order ships. Nothing changes between two events, so the model jumps from one to the next. dynamic-des builds such models on SimPy, and adds live parameters and connectors to databases and message queues.
+A **discrete-event simulation** models a system as events at points in time: a visitor arrives, an order ships. Nothing changes between two events, so the model jumps from one to the next. desflow builds such models on SimPy, and adds live parameters and connectors to databases and message queues.
 
 The parts of the shop's model, in [`run.py`](../sales/simulation/run.py):
 
@@ -78,11 +78,11 @@ An order moves through its statuses like this:
 
 An order that finds no free picker within its patience time, about two minutes, becomes `Cancelled` instead.
 
-An **egress** is a dynamic-des connector that sends the simulation's rows to another system. Each row goes to PostgreSQL through a `PostgresEgress` for its table. Orders and order items are upserted on `id`, so a status change updates the row. The other tables skip a row whose key exists, so a restarted simulation writes the products again without an error.
+An **egress** is a desflow connector that sends the simulation's rows to another system. Each row goes to PostgreSQL through a `PostgresEgress` for its table. Orders and order items are upserted on `id`, so a status change updates the row. The other tables skip a row whose key exists, so a restarted simulation writes the products again without an error.
 
 ## Live changes through the parameter table
 
-Every rate, time and chance lives in dynamic-des's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The processes read the current value each time they draw one, so a change takes effect from the next draw.
+Every rate, time and chance lives in desflow's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The processes read the current value each time they draw one, so a change takes effect from the next draw.
 
 Changes reach the registry through `PostgresIngress`, an **ingress**: a connector that brings changes into the simulation. It reads `dashboard.params`:
 

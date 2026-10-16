@@ -66,7 +66,7 @@ The baseline is not a trained model. It is the error a model has to beat.
 
 | Tool | Role here |
 |---|---|
-| [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des) | simulates hourly weather forecasts and PM2.5 readings, and writes all four feature tables |
+| [desflow](https://github.com/jaehyeon-kim/desflow) | simulates hourly weather forecasts and PM2.5 readings, and writes all four feature tables ([docs](https://jaehyeon.me/desflow/)) |
 | Apache Iceberg | the open table format every table is stored in |
 | Iceberg REST catalog | records each table and the location of its current metadata; odctl runs Apache Iceberg's REST catalog server, which keeps that record in PostgreSQL |
 | SeaweedFS | an S3-compatible object store that holds the tables' data and metadata files |
@@ -99,7 +99,7 @@ uv pip install -r requirements.txt
 odctl init
 
 # 2. make the Airflow container install the packages the pipelines need
-printf '\n_AIRFLOW_PIP_DEPS="dynamic-des[iceberg]>=0.15.0 dateparser==1.4.3"\n' >> .odctl/.env
+printf '\n_AIRFLOW_PIP_DEPS="desflow[iceberg]>=0.20.0 dateparser==1.4.3"\n' >> .odctl/.env
 
 # 3. start the services
 odctl up catalog feast mlflow airflow trino
@@ -153,7 +153,7 @@ The feature pipeline writes four Iceberg tables in the `airq` namespace:
 
 The data is for one simulated station. [Data](docs/data.md) lists every column.
 
-One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. A dynamic-des simulation writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
+One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. A desflow simulation writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
 
 ```bash
 python -m airq.feature.load --n-days 730 --seed 42 --reset
@@ -265,7 +265,7 @@ ORDER BY model_version, day;
 
 ### Load a day and forecast again
 
-Without `--reset`, the same command adds days to the existing tables: one day, yesterday, by default. It uses the backfill's seed and first day, which the backfill stored on the tables, so it continues the same data. It simulates only that day with dynamic-des, and upserts its rows on each table's keys, so running a day again replaces it.
+Without `--reset`, the same command adds days to the existing tables: one day, yesterday, by default. It uses the backfill's seed and first day, which the backfill stored on the tables, so it continues the same data. It simulates only that day with desflow, and upserts its rows on each table's keys, so running a day again replaces it.
 
 Because the data is simulated, the daily run can also load days that have not happened yet. That lets you move time forward one day at a time:
 

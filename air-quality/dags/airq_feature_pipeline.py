@@ -6,7 +6,7 @@
   airq_inference for the last day loaded.
 
 The `airq` package is uploaded next to this file. `_AIRFLOW_PIP_DEPS` installs
-dynamic-des in the Airflow container.
+desflow in the Airflow container.
 """
 
 from datetime import UTC, datetime, timedelta

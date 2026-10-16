@@ -1,4 +1,4 @@
-dynamic-des[postgres]>=0.15.0
+desflow[postgres]>=0.20.0
 fastapi[standard]==0.142.2
 streamlit==1.64.0
 streamlit-echarts==0.7.0

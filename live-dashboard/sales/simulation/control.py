@@ -1,6 +1,6 @@
 """Changes a parameter of the running simulation.
 
-It adds the change to the parameter table, where dynamic-des's PostgreSQL ingress picks
+It adds the change to the parameter table, where desflow's PostgreSQL ingress picks
 it up within two seconds and updates the registry.
 
 Run: python -m sales.simulation.control sales.arrival.visitor.rate 8

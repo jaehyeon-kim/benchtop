@@ -29,7 +29,7 @@ S3 = {
 BUCKET = "odctl-dev"
 S3_PREFIX = "ecommerce-cdc/"  # the sink's files, one folder per topic
 
-# The simulation's parameters. Each is in dynamic-des's registry under `ecommerce.`, so
+# The simulation's parameters. Each is in desflow's registry under `ecommerce.`, so
 # `ecommerce.simulation.control` can change it while the simulation runs.
 SIM_ID = "ecommerce"
 ARRIVALS = {  # mean arrivals per second, exponential

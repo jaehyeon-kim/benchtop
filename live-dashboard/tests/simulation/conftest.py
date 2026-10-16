@@ -5,7 +5,7 @@ import queue
 from datetime import UTC, datetime
 
 import pytest
-from dynamic_des.connectors.egress.base import BaseEgress
+from desflow.connectors.egress.base import BaseEgress
 
 from sales.simulation.run import build
 

@@ -1,4 +1,4 @@
-"""The shop as a discrete-event model in dynamic-des, run in real time into PostgreSQL.
+"""The shop as a discrete-event model in desflow, run in real time into PostgreSQL.
 
 Visitors arrive and browse, and some buy. Each order waits for a picker, ships and
 completes, or is cancelled when no picker comes in time. Every rate, time and chance is
@@ -10,7 +10,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from dynamic_des import PostgresEgress, PostgresIngress, SimulationContext
+from desflow import PostgresEgress, PostgresIngress, SimulationContext
 
 from sales.core.config import (
     ARRIVALS,

@@ -4,7 +4,7 @@ The tables the [ecommerce-cdc](../README.md) simulation writes, the topics Debez
 
 ## Tables
 
-The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. dynamic-des sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. The models and their bounds are in [`models.py`](../ecommerce/core/models.py).
+The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. desflow sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. The models and their bounds are in [`models.py`](../ecommerce/core/models.py).
 
 | Table | Rows | Columns |
 |---|---|---|

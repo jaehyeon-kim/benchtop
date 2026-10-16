@@ -1,4 +1,4 @@
-"""The game as a dynamic-des model, sending each score to Kafka in Avro.
+"""The game as a desflow model, sending each score to Kafka in Avro.
 
 Players arrive at random, and each plays a session of rounds; robots play far faster. A
 score earned while a device is offline arrives minutes later, with the time it was
@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 
-from dynamic_des import KafkaEgress, KafkaIngress, SimulationContext
+from desflow import KafkaEgress, KafkaIngress, SimulationContext
 
 from leaderboard.core.config import BOOTSTRAP_SERVERS, CONTROL_TOPIC, SIM_ID, TOPIC
 from leaderboard.core.models import ScoreEvent

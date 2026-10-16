@@ -36,7 +36,7 @@ To start again at any point, `python -m ecommerce.stores.cleanup` removes everyt
 
 | Tool | Role here |
 |---|---|
-| [dynamic-des](https://github.com/jaehyeon-kim/dynamic-des) | simulates the shop, and writes its rows to PostgreSQL |
+| [desflow](https://github.com/jaehyeon-kim/desflow) | simulates the shop, and writes its rows to PostgreSQL ([docs](https://jaehyeon.me/desflow/)) |
 | PostgreSQL | the shop's database; its write-ahead log is what Debezium reads |
 | Debezium | the source connector that turns each change into an event |
 | Kafka and Kafka Connect | Kafka holds one topic of changes per table; Connect runs the two connectors |

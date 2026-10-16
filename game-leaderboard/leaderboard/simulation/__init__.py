@@ -1,1 +1,1 @@
-"""The game, simulated with dynamic-des."""
+"""The game, simulated with desflow."""

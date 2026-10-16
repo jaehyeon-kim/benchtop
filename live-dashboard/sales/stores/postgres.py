@@ -21,8 +21,17 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.orders (id TEXT PRIMARY KEY, user_id TEXT,
 CREATE TABLE IF NOT EXISTS {SCHEMA}.order_items (id TEXT PRIMARY KEY, order_id TEXT,
     user_id TEXT, product_id BIGINT, status TEXT, sale_price FLOAT8, created_at TEXT);
 CREATE TABLE IF NOT EXISTS {PARAMS_TABLE} (id SERIAL PRIMARY KEY,
-    param_path VARCHAR(255) NOT NULL, param_value TEXT NOT NULL,
+    path VARCHAR(255) NOT NULL, value TEXT NOT NULL,
     is_applied BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+-- desflow 0.21.0 reads `path` and `value`; a table made before it gets its columns renamed.
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema || '.' || table_name = '{PARAMS_TABLE}'
+               AND column_name = 'param_path') THEN
+        ALTER TABLE {PARAMS_TABLE} RENAME COLUMN param_path TO path;
+        ALTER TABLE {PARAMS_TABLE} RENAME COLUMN param_value TO value;
+    END IF;
+END $$;
 """
 
 # The order items of the last $1 minutes, with their users and products.
@@ -67,7 +76,7 @@ async def send_change(path: str, value: float) -> None:
     conn = await asyncpg.connect(DSN)
     try:
         await conn.execute(
-            f"INSERT INTO {PARAMS_TABLE} (param_path, param_value) VALUES ($1, $2)",
+            f"INSERT INTO {PARAMS_TABLE} (path, value) VALUES ($1, $2)",
             path,
             str(value),
         )

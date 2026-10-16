@@ -28,7 +28,7 @@ Orders and order items are upserted on `id` each time the status changes, so a r
 
 ## Parameter table
 
-`params` holds the live changes: `id`, `param_path` (such as `sales.arrival.visitor.rate`), `param_value`, `is_applied` and `created_at`. [Concepts](concepts.md#live-changes-through-the-parameter-table) explains how a row becomes a change.
+`params` holds the live changes: `id`, `path` (such as `sales.arrival.visitor.rate`), `value`, `is_applied` and `created_at`. [Concepts](concepts.md#live-changes-through-the-parameter-table) explains how a row becomes a change.
 
 ## Records the server sends
 

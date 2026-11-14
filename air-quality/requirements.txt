@@ -1,4 +1,4 @@
-desflow[iceberg]>=0.20.0
+desflow[iceberg]>=1.0.0
 dateparser==1.4.3
 odctl>=1.0,<2
 awscli==1.46.1

@@ -15,7 +15,7 @@ More detail is in two documents:
 
 Four parts do the work:
 
-- **Simulation:** plays the game in real time with [desflow](https://github.com/jaehyeon-kim/desflow), and sends each score to the Kafka [topic](docs/concepts.md#kafka-basics) `game-scores`.
+- **Simulation:** plays the game in real time with [desflow](https://github.com/jaehyeon-kim/desflow), from the blueprint [`game.yaml`](leaderboard/simulation/game.yaml), and sends each score to the Kafka [topic](docs/concepts.md#kafka-basics) `game-scores`.
 - **Flink jobs:** one per leaderboard. Each reads the topic and keeps its leaderboard up to date as scores arrive. A Flink SQL query of this kind never finishes: it keeps its result current for as long as it runs. [Concepts](docs/concepts.md#continuous-queries-and-dynamic-tables) explains how.
 - **PostgreSQL:** holds each leaderboard as a table with one row per rank.
 - **Dashboard:** reads the four tables and redraws them every 2 seconds.
@@ -105,10 +105,10 @@ The code connects to Kafka, Karapace, Flink and PostgreSQL at the addresses in [
 ## Step 1: run the simulation
 
 ```bash
-python -m leaderboard.simulation.run     # Ctrl + C to stop
+desflow run leaderboard/simulation/game.yaml     # Ctrl + C to stop
 ```
 
-It creates two Kafka topics if they are missing: `game-scores` for the scores, and `game-control` for parameter changes. Then it plays the game until you stop it:
+desflow creates three Kafka topics if they are missing: `game-scores` for the scores, `game-control` for parameter changes, and `sim-telemetry`, desflow's telemetry topic, to which the game sends nothing. Then it plays the game until you stop it:
 
 - A player arrives every 2 seconds on average, and plays a session of about 5 minutes.
 - A person plays a round about every 6 seconds, and a robot about every 1.5 seconds. 5% of players are robots.
@@ -182,9 +182,9 @@ Players who are already playing keep their type until their sessions end, within
 - **Top players** fills with robots (`RBT-...`). A robot plays a round about every 1.5 seconds, four times as often as a person, and its scores come from the same range, so its total grows four times as fast.
 - **Top teams** changes as the robots' teams climb, because their totals grow faster.
 - **Team MVPs** fills with robots, because a robot earns a large share of any team it joins.
-- **Hot streaks** stays with people. A streak divides a player's average over the last 10 seconds by their average over the last minute. A robot plays 6 or 7 rounds in 10 seconds, so its short average stays close to its long one, and its ratio stays near 1. A person plays one or two rounds in 10 seconds, so one high score can double the short average.
+- **Hot streaks** stays with people while any are still playing. A streak divides a player's average over the last 10 seconds by their average over the last minute. A robot plays 6 or 7 rounds in 10 seconds, so its short average stays close to its long one, and its ratio stays near 1. A person plays one or two rounds in 10 seconds, so one high score can double the short average. Once the last people's sessions end, about 6 minutes after the change, only robots are left, and they fill the board.
 
-![Dashboard after the change, with robots (RBT-...) filling the top players and the team MVPs, and only people (USR-...) in the hot streaks](images/dashboard-robots.png)
+![Dashboard 3 minutes after the change, with robots (RBT-...) filling the top players and the team MVPs, and only people (USR-...) in the hot streaks](images/dashboard-robots.png)
 
 To count the robots in the top players and the hot streaks in PostgreSQL:
 
@@ -208,7 +208,7 @@ The tests need none of the services:
 python -m pytest tests
 ```
 
-They run the simulation as fast as possible and check its behaviour: sessions end, robots play about four times as often, late scores carry the time they were earned, teams fill and dissolve, and a live change takes effect. They check that each SQL file is its own named job with checkpoints and a state limit, and that every table's columns match between Flink and PostgreSQL. Others cover the serializer, the dashboard's queries, and which jobs the clean-up cancels. GitHub runs them after the lint checks on every push to `main`.
+They run the blueprint as fast as possible with a fixed seed. `desflow test` checks the counts in the blueprint's `tests:` section, and the other checks read the records: only scores are sent, each fits `score.avsc` and its bounds, a player stays in one team, robots play about four times as often, and late scores carry the time they were earned. They check that each SQL file is its own named job with checkpoints and a state limit, and that every table's columns match between Flink and PostgreSQL and the source table's columns match `score.avsc`. Others cover the dashboard's queries and which jobs the clean-up cancels. GitHub runs them after the lint checks on every push to `main`.
 
 ## Clean up
 
@@ -221,7 +221,7 @@ python -m leaderboard.stores.cleanup
 It removes everything this project has created, and keeps the services running:
 
 - **Flink:** the four jobs, which it cancels.
-- **Kafka:** the topics `game-scores` and `game-control`.
+- **Kafka:** the topics `game-scores`, `game-control` and `sim-telemetry`.
 - **Karapace:** the subject `game-scores-value`.
 - **PostgreSQL:** the schema `game`, with its four tables.
 

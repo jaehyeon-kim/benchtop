@@ -101,12 +101,12 @@ The web UIs:
 ## Step 1: run the simulation
 
 ```bash
-python -m ecommerce.simulation.run --minutes 16     # or leave out --minutes, and stop with Ctrl + C
+desflow run ecommerce/simulation/shop.yaml --until "16 min"   # or leave out --until, and stop with Ctrl + C
 ```
 
 It creates the six tables in the `cdc` schema if they are missing, and writes the 10 distribution centres, the 260 products and 100 users. It then runs in real time. With the default parameters it places about 18 orders a minute. Each order is then updated when it ships and when it is delivered, and one in ten is later returned. `--seed <n>` makes every random choice repeat. [Data](docs/data.md#tables) lists every table's columns.
 
-The model is in [`run.py`](ecommerce/simulation/run.py), and [Concepts](docs/concepts.md#simulation-model) describes it. The shop's rules are plain functions in [`shop.py`](ecommerce/simulation/shop.py), and the distribution centres, cities and products are in [`catalogue.py`](ecommerce/simulation/catalogue.py). Each row is built from a model in [`models.py`](ecommerce/core/models.py), with its bounds.
+The whole model is the YAML file [`shop.yaml`](ecommerce/simulation/shop.yaml), and [Concepts](docs/concepts.md#simulation-model) describes it. It reads the distribution centres, products and cities from the CSV files beside it.
 
 Leave it running, and use a second terminal for the next steps.
 
@@ -179,7 +179,7 @@ Each message is one change, and its `op` field says which kind: `r` for a snapsh
     "returned_at": null
   },
   "source": {
-    "version": "3.5.1.Final",
+    "version": "3.7.0.Final",
     "connector": "postgresql",
     "name": "ecommerce",
     "ts_ms": 1790775541329,
@@ -221,22 +221,21 @@ The simulation reads parameter changes from the Kafka topic `ecommerce-control`,
 python -m ecommerce.simulation.control ecommerce.resources.pickers.current_cap 1
 ```
 
-Three pickers pack about 36 orders a minute, twice as many as are placed. One picker packs about 12, fewer than the 18 or so placed, so orders queue for it. The `Shipped` updates in `ecommerce.cdc.orders` fall, and `Cancelled` updates appear as customers' patience runs out, which does not happen with three pickers. In one run, with the change sent at 12:45, the changes per minute were:
+Three pickers pack about 36 orders a minute, twice as many as are placed. One picker packs about 12, fewer than the 18 or so placed, so orders queue for it. The `Shipped` updates in `ecommerce.cdc.orders` fall, and `Cancelled` updates appear as customers' patience runs out, which does not happen with three pickers. In one run, with the change sent at 03:45, the changes per minute were:
 
 | Minute (UTC) | Pickers | New orders | Shipped | Cancelled |
 |---|---|---|---|---|
-| 12:41 | 3 | 18 | 18 | 0 |
-| 12:42 | 3 | 23 | 22 | 0 |
-| 12:43 | 3 | 20 | 21 | 0 |
-| 12:44 | 3 | 27 | 27 | 0 |
-| 12:46 | 1 | 18 | 10 | 3 |
-| 12:47 | 1 | 10 | 13 | 6 |
-| 12:48 | 1 | 20 | 10 | 0 |
-| 12:49 | 1 | 16 | 13 | 4 |
-| 12:50 | 1 | 24 | 12 | 7 |
-| 12:51 | 1 | 16 | 9 | 4 |
-| 12:52 | 1 | 17 | 12 | 10 |
-| 12:53 | 1 | 13 | 10 | 8 |
+| 03:41 | 3 | 16 | 20 | 0 |
+| 03:42 | 3 | 21 | 17 | 0 |
+| 03:43 | 3 | 22 | 23 | 0 |
+| 03:44 | 3 | 16 | 18 | 0 |
+| 03:46 | 1 | 26 | 12 | 0 |
+| 03:47 | 1 | 16 | 14 | 1 |
+| 03:48 | 1 | 20 | 12 | 6 |
+| 03:49 | 1 | 20 | 14 | 2 |
+| 03:50 | 1 | 19 | 13 | 4 |
+| 03:51 | 1 | 20 | 12 | 10 |
+| 03:52 | 1 | 13 | 12 | 6 |
 
 ![Kafka UI showing the ecommerce.cdc.orders messages filtered on Cancelled, with one update decoded to the status Cancelled](images/kafka-ui-orders-cancelled.png)
 
@@ -250,7 +249,7 @@ The tests need none of the services:
 python -m pytest tests
 ```
 
-They check the order statuses, the catalogue, the row bounds, the connector settings and which topics the clean-up deletes. They also run the model at full speed with a fixed seed: every order finishes, one picker causes cancellations while three do not, and a seed repeats exactly. GitHub runs them, after the repository's lint checks, on every push to `main`.
+They check the catalogue files, the connector settings and which topics the clean-up deletes. They also run the model at full speed with a fixed seed, through `desflow run --sample`, which contacts no service. Every row has its table's columns and stays within the bounds of [`models.py`](ecommerce/core/models.py), and each order moves only through allowed statuses. Most orders finish, one picker causes cancellations while three do not, and a seed repeats the same rows apart from their times, which start at the current time. Visitors are registered, anonymous or signed up at purchase, and a user who moves keeps the same id. `desflow test ecommerce/simulation/shop.yaml` runs the counts that the file's `tests` section states, and the pytest suite runs it too. GitHub runs them, after the repository's lint checks, on every push to `main`.
 
 ## Clean up
 

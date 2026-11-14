@@ -99,7 +99,7 @@ uv pip install -r requirements.txt
 odctl init
 
 # 2. make the Airflow container install the packages the pipelines need
-printf '\n_AIRFLOW_PIP_DEPS="desflow[iceberg]>=0.20.0 dateparser==1.4.3"\n' >> .odctl/.env
+printf '\n_AIRFLOW_PIP_DEPS="desflow[iceberg]>=1.0.0 dateparser==1.4.3"\n' >> .odctl/.env
 
 # 3. start the services
 odctl up catalog feast mlflow airflow trino
@@ -153,13 +153,13 @@ The feature pipeline writes four Iceberg tables in the `airq` namespace:
 
 The data is for one simulated station. [Data](docs/data.md) lists every column.
 
-One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. A desflow simulation writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
+One command, `python -m airq.feature.load`, does both the backfill and the daily run. It loads `--n-days` of data ending with `--until`, which defaults to yesterday (UTC). With `--reset`, it first recreates the tables, which replaces any data already there, and deletes the predictions made from it. It runs the desflow blueprint [`model.yaml`](airq/feature/model.yaml), which writes all four tables: each hour's forecasts and reading, and each day's daily rows when the day ends. The data is generated from a seed (default 42), so the same seed always gives the same values:
 
 ```bash
 python -m airq.feature.load --n-days 730 --seed 42 --reset
 ```
 
-Every row is checked as it is built, against bounds such as PM2.5 between 0 and 500, so a run stops before it writes an impossible value. The bounds are in [`models.py`](airq/core/models.py).
+The blueprint checks every row before it is written, against the bounds in [`models.py`](airq/core/models.py), such as PM2.5 between 0 and 500. A row outside them stops the run, so an impossible value is never written.
 
 ![SeaweedFS file browser showing the folders of the four airq tables under warehouse/airq](images/seaweedfs-warehouse-airq.png)
 
@@ -265,7 +265,7 @@ ORDER BY model_version, day;
 
 ### Load a day and forecast again
 
-Without `--reset`, the same command adds days to the existing tables: one day, yesterday, by default. It uses the backfill's seed and first day, which the backfill stored on the tables, so it continues the same data. It simulates only that day with desflow, and upserts its rows on each table's keys, so running a day again replaces it.
+Without `--reset`, the same command adds days to the existing tables: one day, yesterday, by default. It uses the backfill's seed and first day, which the backfill stored on the tables, so it continues the same data. desflow simulates again from the first day, so a day gets the same values as in the backfill, and writes only the day asked for. It upserts the rows on each table's keys, so running a day again replaces it.
 
 Because the data is simulated, the daily run can also load days that have not happened yet. That lets you move time forward one day at a time:
 
@@ -318,19 +318,19 @@ The feature sweep tests which daily features to add to the weather. It records i
 python -m airq.training.sweep
 ```
 
-Every error in this step is the mean absolute error (MAE) in µg/m³. The figures come from one run of these steps on 14 October 2026, with a 730-day backfill and seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. [`test_ordering.py`](tests/training/test_ordering.py) checks that.
+Every error in this step is the mean absolute error (MAE) in µg/m³. The figures come from one run of these steps on 14 November 2026, with a 730-day backfill and seed 42. A backfill on another date covers other days, so its figures differ. The order does not change: the baseline has the highest error and v2 the lowest. [`test_ordering.py`](tests/training/test_ordering.py) checks that.
 
 The sweep's scores, on the same test days as v2's training below:
 
 | Features | MAE |
 |---|---|
-| weather | 1.89 |
-| weather and weekend flag | 0.78 |
-| plus yesterday's PM2.5 | 0.76 |
-| plus the two days before | 0.77 |
-| plus the three days before | 0.76 |
+| weather | 1.79 |
+| weather and weekend flag | 0.61 |
+| plus yesterday's PM2.5 | 0.62 |
+| plus the two days before | 0.64 |
+| plus the three days before | 0.66 |
 
-The sweep keeps adding features while each one lowers the error by at least 5%. The weekend flag cuts the error by about 60%, because the simulation raises PM2.5 on weekdays. Yesterday's PM2.5 then lowers it by less than 3%, so the sweep stops there, and v2 is the weather and the weekend flag.
+The sweep keeps adding features while each one lowers the error by at least 5%. The weekend flag cuts the error by about two thirds, because the simulation raises PM2.5 on weekdays. Yesterday's PM2.5 then raises the error slightly instead of lowering it, so the sweep stops there, and v2 is the weather and the weekend flag.
 
 #### Past PM2.5 readings
 
@@ -338,10 +338,10 @@ A forecast for day D+N can use a reading from N days before it at best. The swee
 
 | Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
-| without the reading | 0.76 | 0.83 | 0.87 | 0.85 | 0.95 | 0.92 | 0.93 |
-| with the reading | 0.74 | 0.80 | 0.86 | 0.85 | 0.88 | 0.89 | 0.93 |
+| without the reading | 0.63 | 0.77 | 0.74 | 0.84 | 0.73 | 0.85 | 0.90 |
+| with the reading | 0.63 | 0.75 | 0.72 | 0.86 | 0.73 | 0.84 | 0.92 |
 
-The reading lowers the error by 0.03 or less at six of the seven leads, and by 0.07 at lead 5. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new. Leaving past readings out also avoids needing one model per lead, and a forecast that a missing or late reading would stop.
+The reading changes the error by 0.02 or less at every lead. It lowers the error at three leads, raises it at two, and leaves it the same at the other two. In this simulation, PM2.5 depends on the day's weather and weekday plus random noise. Nothing carries over from the day before, so a past reading tells the model nothing new. Leaving past readings out also avoids needing one model per lead, and a forecast that a missing or late reading would stop.
 
 ![MLflow showing the feature-sweep run: the MAE of each feature set, and the tag chosen: weather+weekend](images/mlflow-feature-sweep.png)
 
@@ -397,8 +397,8 @@ These figures come from the same run as the sweep. v1 and v2 are XGBoost models 
 
 | Model | MAE | Baseline on the same days |
 |---|---|---|
-| v1 | 1.86 | 3.70 |
-| v2 | 0.77 | 3.75 |
+| v1 | 1.74 | 4.00 |
+| v2 | 0.65 | 4.01 |
 
 v1's error is well below the baseline's. PM2.5 follows the weather, and the forecast sees the weather change before it happens.
 
@@ -410,8 +410,8 @@ The backtest predicts seven days ahead from each of 60 past dates. All 60 fall i
 
 | Days ahead | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
-| v1 | 1.67 | 1.70 | 1.58 | 1.34 | 1.89 | 1.70 | 2.15 |
-| v2 | 0.94 | 0.93 | 0.96 | 0.72 | 1.02 | 0.99 | 1.05 |
+| v1 | 1.90 | 1.92 | 2.00 | 2.01 | 2.03 | 1.91 | 2.32 |
+| v2 | 0.70 | 0.61 | 0.61 | 0.54 | 0.92 | 0.81 | 1.04 |
 
 v2 has the lower error at every lead. Over 30 days, neither model's error grows steadily with the lead.
 
@@ -473,7 +473,7 @@ Questions it answers well:
 - What was the highest PM2.5 over the last seven days?
 - Which model has been more accurate over the last 30 days?
 
-![The app's Assistant tab answering "What is the forecast for tomorrow?" with the day, Thursday 2026-10-08, and the forecast value, 9.09 µg/m³](images/app-assistant.png)
+![The app's Assistant tab answering "What is the forecast for tomorrow?" with the day, Sunday 2026-11-15, and the forecast value, 3.5 µg/m³](images/app-assistant.png)
 
 The default model, `qwen3:4b-instruct`, is small. If an answer is wrong, improve the tools or the prompt in [`assistant.py`](airq/app/assistant.py) rather than switching to a larger model.
 
@@ -501,11 +501,11 @@ Press **Refresh** in the app, and the charts move forward one day.
 
 Airflow runs the same pipelines as DAGs, its name for workflows, and runs them on a schedule. It is an alternative to the terminal commands in Steps 1 and 2: its backfill replaces the data those commands wrote. Run `python -m airq.stores.cleanup` first to start from an empty stack ([Clean up](#clean-up)).
 
-Airflow loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds. Copy the `dags` folder and the `airq` package its tasks import there, and copy them again whenever you change either:
+Airflow loads DAGs from the bucket `s3://airflow/dags`, and checks it for changes every 15 seconds. Copy the `dags` folder and the `airq` package its tasks import there, with the blueprint `airq/feature/model.yaml`, and copy them again whenever you change any of them:
 
 ```bash
 export AWS_ACCESS_KEY_ID=user AWS_SECRET_ACCESS_KEY=password AWS_DEFAULT_REGION=us-east-1
-aws --endpoint-url http://127.0.0.1:8333 s3 sync . s3://airflow/dags --exclude "*" --include "airq/*.py" --include "dags/*.py" --delete
+aws --endpoint-url http://127.0.0.1:8333 s3 sync . s3://airflow/dags --exclude "*" --include "airq/*.py" --include "airq/*.yaml" --include "dags/*.py" --delete
 ```
 
 `--delete` removes files you have deleted locally.
@@ -574,7 +574,7 @@ The tests need none of the services:
 python -m pytest tests
 ```
 
-They cover the simulation and feature code, the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases, the assistant's tools, and which DAG files the clean-up deletes. GitHub runs them, after the repository's lint checks, on every push to `main`.
+They cover the desflow blueprint (its own tests through `desflow test`, its rows, and a daily run against the backfill), the value bounds, Feast's point-in-time join, the training splits, the sweep's choice, inference, the champion and challenger handling, day phrases, the assistant's tools, and which DAG files the clean-up deletes. GitHub runs them, after the repository's lint checks, on every push to `main`.
 
 ## Clean up
 

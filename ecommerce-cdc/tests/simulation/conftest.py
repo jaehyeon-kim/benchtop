@@ -1,43 +1,55 @@
-"""A fast, seeded run of the shop, collected in memory, so no test needs the odctl stack."""
+"""A fast, seeded run of the shop blueprint, so no test needs the odctl stack."""
 
-import asyncio
-import queue
-from datetime import UTC, datetime
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
-from desflow.connectors.egress.base import BaseEgress
 
-from ecommerce.simulation.run import build
+BLUEPRINT = Path(__file__).parents[2] / "ecommerce" / "simulation" / "shop.yaml"
+DESFLOW = Path(sys.executable).parent / "desflow"
 
-START = datetime(2026, 9, 1, tzinfo=UTC)
-
-
-class Collect(BaseEgress):
-    """Keeps every published event in a list."""
-
-    def __init__(self):
-        self.events: list[dict] = []
-
-    async def run(self, egress_queue: queue.Queue) -> None:
-        while True:
-            try:
-                self.events += egress_queue.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0.01)
+# The task that writes each table's rows, as shop.yaml names them
+TABLE_OF_TASK = {
+    "dist_center": "dist_centers",
+    "product": "products",
+    "user": "users",
+    "order_row": "orders",
+    "item_row": "order_items",
+    "page": "events",
+}
 
 
-def simulate(minutes: float, **resources: int) -> list[dict]:
-    """Runs the shop for `minutes` simulated minutes, as fast as possible, and returns its events."""
-    app = build(START, seed=7, factor=0.0)
-    for name, capacity in resources.items():
-        app.add_resource(name, current_cap=capacity, max_cap=10)
-    collect = Collect()
-    app.add_egress(collect, when=lambda r: r["stream_type"] == "event")
-    app.run(until=minutes * 60)
-    return collect.events
+def simulate(minutes: float, **variables: str) -> list[tuple[str, dict]]:
+    """
+    Runs the blueprint for `minutes` simulated minutes with seed 7, unpaced, and
+    returns its rows.
+
+    `desflow run --sample` prints the records as JSON lines and contacts no service:
+    it leaves out the ingress and puts a console in place of the sinks.
+
+    Args:
+        minutes (float): How long to run, in simulated minutes.
+        **variables (str): Values for the blueprint's `${NAME}`, such as PICKERS="1".
+
+    Returns:
+        list[tuple[str, dict]]: Each row's table and its columns, in the order written.
+    """
+    command = [str(DESFLOW), "run", str(BLUEPRINT), "--seed", "7"]
+    command += ["--until", f"{minutes} min", "--sample", "10000000"]
+    for name, value in variables.items():
+        command += ["--var", f"{name}={value}"]
+    out = subprocess.run(command, capture_output=True, text=True, check=True).stdout
+    records = (json.loads(line) for line in out.splitlines())
+    return [
+        (TABLE_OF_TASK[r["task"]], r["value"])
+        for r in records
+        if r["task"] in TABLE_OF_TASK and "id" in r["value"]
+    ]
 
 
 @pytest.fixture(scope="session")
-def half_hour() -> list[dict]:
-    """The events of 30 simulated minutes with the default three pickers."""
+def half_hour() -> list[tuple[str, dict]]:
+    """The rows of 30 simulated minutes with the default three pickers."""
     return simulate(30)

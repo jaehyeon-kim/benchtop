@@ -1,8 +1,8 @@
 """Pydantic models for the rows of the Iceberg tables, one model per table.
 
-The Iceberg schemas are derived from these models, and the generator and the feature
-code build rows with them. The bounds on the fields check every row when it is built,
-before anything is written.
+The Iceberg schemas are derived from these models. The desflow blueprint
+airq/feature/model.yaml writes the rows of the first four, and fails a run before it
+writes a row outside the bounds on their fields; the tests validate its rows with them.
 """
 
 from datetime import date

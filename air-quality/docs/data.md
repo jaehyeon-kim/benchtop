@@ -1,6 +1,6 @@
 # Data
 
-Every table the [air-quality](../README.md) pipelines write. The tables are Iceberg tables in the `airq` namespace, with their files on SeaweedFS under `s3://warehouse/airq/<table>`.
+Every table the [air-quality](../README.md) pipelines write. The tables are Iceberg tables in the `airq` namespace, with their files on SeaweedFS under `s3://warehouse/airq/<table>`. The desflow blueprint [`model.yaml`](../airq/feature/model.yaml) writes the hourly and daily tables, and `python -m airq.feature.load` runs it.
 
 ## Hourly tables
 

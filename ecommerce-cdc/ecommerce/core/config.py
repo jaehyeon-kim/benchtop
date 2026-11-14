@@ -29,25 +29,10 @@ S3 = {
 BUCKET = "odctl-dev"
 S3_PREFIX = "ecommerce-cdc/"  # the sink's files, one folder per topic
 
-# The simulation's parameters. Each is in desflow's registry under `ecommerce.`, so
-# `ecommerce.simulation.control` can change it while the simulation runs.
+# The parameters that `ecommerce.simulation.control` can change while the simulation
+# runs. Their values are in `ecommerce/simulation/shop.yaml`, and each is in desflow's
+# registry under `ecommerce.`.
 SIM_ID = "ecommerce"
-ARRIVALS = {  # mean arrivals per second, exponential
-    "visitor": 1.0,
-    "move": 0.05,  # a registered user moves address
-}
-SERVICES = {  # mean and standard deviation, in seconds, lognormal
-    "page_view": (4.0, 2.0),  # time on a page before the next one
-    # how long an order waits for a picker before it is cancelled
-    "patience": (120.0, 60.0),
-    "pick": (5.0, 2.0),  # a picker packs an order
-    "transit": (60.0, 20.0),  # a shipped order reaches the customer
-    "return_after": (60.0, 30.0),  # a returned order comes back after delivery
-}
-CHANCES = {  # shares of visitors or orders, from 0 to 1
-    "returning": 0.6,  # a visitor is a registered user
-    "buy": 0.3,  # a visitor buys at the end of the visit
-    "return": 0.1,  # a delivered order is returned
-}
-PICKERS, MAX_PICKERS = 3, 10  # warehouse pickers packing orders at once
-INITIAL_USERS = 100
+ARRIVALS = ("visitor", "move")  # mean arrivals per second
+SERVICES = ("page_view", "patience", "pick", "transit", "return_after")  # mean seconds
+CHANCES = ("returning", "buy", "return")  # shares of visitors or orders

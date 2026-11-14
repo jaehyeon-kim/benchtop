@@ -1,6 +1,6 @@
 # Data
 
-The tables the [live-dashboard](../README.md) simulation writes, and the records the WebSocket server sends. The tables are in the `dashboard` schema of odctl's PostgreSQL database `odctl`, created by [`postgres.py`](../sales/stores/postgres.py).
+The tables the [live-dashboard](../README.md) simulation writes, and the records the WebSocket server sends. The tables are in the `dashboard` schema of odctl's PostgreSQL database `odctl`, created by desflow when [`model.yaml`](../model.yaml) starts: the four shop tables by its `egress` entries, and the parameter table by its `ingress` entry.
 
 Times are ISO 8601 text in UTC, because desflow publishes rows as JSON-friendly values. A query casts them with `created_at::timestamptz` before comparing.
 
@@ -8,7 +8,7 @@ Times are ISO 8601 text in UTC, because desflow publishes rows as JSON-friendly 
 
 | Table | Column | Description |
 |---|---|---|
-| `products` | `id` | 1 to 260: one product per brand (5), category (26) and department (2), the same every run |
+| `products` | `id` | 1 to 260: one product per brand (5), category (26) and department (2), read from [`products.csv`](../products.csv) |
 | | `name` | such as `Kestrel Women's Jeans` |
 | | `category`, `department` | such as `Jeans`, and `Men` or `Women` |
 | | `retail_price`, `cost` | dollars; the cost is 39% to 59% of the price |

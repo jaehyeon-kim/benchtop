@@ -4,7 +4,7 @@ The [game-leaderboard](../README.md) events and tables.
 
 ## Score events
 
-One event per round goes to the topic `game-scores` in Avro, under the Karapace subject `game-scores-value`. The model, with bounds checked before sending, is in [`models.py`](../leaderboard/core/models.py).
+One event per round goes to the topic `game-scores` in Avro, under the Karapace subject `game-scores-value`, keyed by `user_id`. The schema is [`score.avsc`](../leaderboard/simulation/score.avsc), and the blueprint [`game.yaml`](../leaderboard/simulation/game.yaml) builds each event. [`test_game.py`](../tests/simulation/test_game.py) checks the bounds below on every event of a seeded run.
 
 | Field | Type | Description |
 |---|---|---|

@@ -1,0 +1,450 @@
+# The shop, run by desflow: visitors view pages and some buy, a warehouse picker packs
+# each order, which is then shipped, delivered and sometimes returned, and registered
+# users move house. Every row goes to one of the six tables of the `cdc` schema in
+# PostgreSQL, which the Debezium connector reads.
+#
+# Run it with: desflow run ecommerce/simulation/shop.yaml   (until Ctrl + C)
+# Change a parameter while it runs with ecommerce.simulation.control.
+simulation:
+  sim_id: ecommerce
+  # Real seconds per simulated second: 1 runs in real time, and 0 as fast as possible
+  factor: 1
+  logical_start_time: now
+  timezone: UTC
+
+# Parameter changes from ecommerce.simulation.control
+ingress:
+  - type: Kafka
+    config:
+      bootstrap_servers: "127.0.0.1:9092"
+      topic: ecommerce-control
+
+# Shares of visitors or orders, from 0 to 1
+variables:
+  returning: 0.6 # a visitor is a registered user
+  buy: 0.3 # a visitor buys at the end of the visit
+  return: 0.1 # a delivered order is returned
+
+# Warehouse pickers packing orders at once
+resources:
+  pickers: {current_cap: "${PICKERS:-3}", max_cap: 10}
+
+# Mean and standard deviation, in seconds
+services:
+  page_view: {dist: lognormal, mean: 4.0, std: 2.0} # time on a page before the next one
+  # how long an order waits for a picker before it is cancelled
+  patience: {dist: lognormal, mean: 120.0, std: 60.0}
+  pick: {dist: lognormal, mean: 5.0, std: 2.0} # a picker packs an order
+  transit: {dist: lognormal, mean: 60.0, std: 20.0} # a shipped order reaches the customer
+  return_after: {dist: lognormal, mean: 60.0, std: 30.0} # a returned order comes back
+
+# The fixed rows and the first users are made at the start, in this order, before the
+# first visitor. Rates are mean arrivals per second.
+arrivals:
+  centers: {initial: 10, spawn: dist_center}
+  products: {initial: 260, spawn: product}
+  users: {initial: 100, spawn: register}
+  visitor: {dist: exponential, rate: 1.0, spawn: visit}
+  move: {dist: exponential, rate: 0.05, spawn: move} # a registered user moves house
+
+tasks:
+  dist_center:
+    vars:
+      center: {gen: row, file: dist_centers.csv, order: sequential}
+    payload: {gen: expr, expr: "set_key(center, '__table__', 'cdc.dist_centers')"}
+  product:
+    vars:
+      product: {gen: row, file: products.csv, order: sequential}
+    payload: {gen: expr, expr: "set_key(product, '__table__', 'cdc.products')"}
+
+  # A new user: one of the first users, or a visitor who signs up to buy. The first
+  # name follows the gender.
+  register:
+    vars:
+      person:
+        gen: one_of
+        choices:
+          - gender: F
+            first: {gen: fake, method: first_name_female}
+          - gender: M
+            first: {gen: fake, method: first_name_male}
+      last: {gen: fake, method: last_name}
+    payload: null
+    set:
+      person:
+        id: {gen: uuid}
+        first_name: {gen: var, name: person, path: first}
+        last_name: {gen: var, name: last}
+        email:
+          gen: lower
+          value:
+            gen: format
+            template: "{f}.{l}@{d}"
+            names:
+              f: {gen: var, name: person, path: first}
+              l: {gen: var, name: last}
+              d: {gen: fake, method: safe_domain_name}
+        age: {gen: integer, bounds: [12, 70]}
+        gender: {gen: var, name: person, path: gender}
+        traffic_source: {gen: one_of, choices: [Organic, Facebook, Search, Email]}
+        # The simulated time as ISO 8601 text in UTC, to the second. Each `*now` below
+        # is this generator.
+        created_at: &now {gen: format_time, format: "%Y-%m-%dT%H:%M:%S+00:00"}
+    next: user
+  # A registered user moves to a new address. A user may move more than once, and the
+  # fields other than the address stay as they were.
+  move:
+    payload: null
+    set:
+      person: {gen: lookup, task: user, latest_by: id}
+    next: user
+  # The users row of a new or moved user: the person, at a new address in a city
+  # chosen by population. Every users row comes from this task, so a lookup of its
+  # newest row for each id gives every user's current address.
+  user:
+    vars:
+      city: {gen: row, file: cities.csv, weight: population}
+    payload:
+      __table__: cdc.users
+      id: {gen: attr, name: person, path: id}
+      first_name: {gen: attr, name: person, path: first_name}
+      last_name: {gen: attr, name: person, path: last_name}
+      email: {gen: attr, name: person, path: email}
+      age: {gen: attr, name: person, path: age}
+      gender: {gen: attr, name: person, path: gender}
+      street_address: {gen: fake, method: street_address}
+      # a CSV cell of digits is read as a number
+      postal_code: {gen: expr, expr: "str(city['postal_code'])"}
+      city: {gen: var, name: city, path: city}
+      state: {gen: var, name: city, path: state}
+      country: {gen: var, name: city, path: country}
+      latitude: {gen: var, name: city, path: latitude}
+      longitude: {gen: var, name: city, path: longitude}
+      traffic_source: {gen: attr, name: person, path: traffic_source}
+      created_at: {gen: attr, name: person, path: created_at}
+      updated_at: *now
+    set:
+      user_id: {gen: attr, name: person, path: id}
+    next:
+      # a visitor who signed up goes on to the purchase page
+      when:
+        - {condition: "has(attr.session_id)", task: page}
+
+  # One visit: a registered user or an anonymous visitor views the home page, one to
+  # four products, and the cart and purchase pages when buying. `pages` holds each
+  # page's type and address, in the order viewed.
+  visit:
+    vars:
+      returning: {gen: boolean, p: {gen: param, path: ecommerce.variables.returning}}
+      buys: {gen: boolean, p: {gen: param, path: ecommerce.variables.buy}}
+      user:
+        gen: when
+        condition: returning
+        then: {gen: lookup, task: user, latest_by: id}
+      # an anonymous visitor's location
+      city: {gen: row, file: cities.csv, weight: population}
+      viewed:
+        gen: repeat
+        times: {gen: integer, bounds: [1, 4]}
+        value: {gen: integer, bounds: [1, 260]}
+    payload: null
+    set:
+      session_id: {gen: uuid}
+      user_id: {gen: expr, expr: "None if user is None else user['id']"}
+      city: {gen: expr, expr: "city['city'] if user is None else user['city']"}
+      state: {gen: expr, expr: "city['state'] if user is None else user['state']"}
+      postal_code:
+        gen: expr
+        expr: "str(city['postal_code']) if user is None else user['postal_code']"
+      browser: {gen: one_of, choices: [Chrome, Safari, Firefox]}
+      traffic_source: {gen: one_of, choices: [Email, Adwords, Organic, YouTube]}
+      pages:
+        gen: expr
+        expr: >-
+          [['home', '/home']] + [['product', '/product/' + str(i)] for i in viewed]
+          + ([['cart', '/cart'], ['purchase', '/purchase']] if buys else [])
+      seq: 0
+    next: page
+  # The events row of the page at `seq`. The purchase page also starts the order.
+  page:
+    payload:
+      __table__: cdc.events
+      id: {gen: uuid}
+      user_id: {gen: attr, name: user_id}
+      session_id: {gen: attr, name: session_id}
+      sequence_number: {gen: expr, expr: "attr.seq + 1"}
+      event_type: {gen: expr, expr: "attr.pages[attr.seq][0]"}
+      uri: {gen: expr, expr: "attr.pages[attr.seq][1]"}
+      city: {gen: attr, name: city}
+      state: {gen: attr, name: state}
+      postal_code: {gen: attr, name: postal_code}
+      browser: {gen: attr, name: browser}
+      traffic_source: {gen: attr, name: traffic_source}
+      ip_address: {gen: fake, method: ipv4}
+      created_at: *now
+    spawn:
+      task: order
+      count: "1 if attr.pages[attr.seq][0] == 'purchase' else 0"
+      args:
+        user_id: {gen: attr, name: user_id}
+    set:
+      seq: {gen: expr, expr: "attr.seq + 1"}
+    next:
+      when:
+        - {condition: "attr.seq < len(attr.pages)", task: next_page}
+  # The time on a page before the next one. An anonymous buyer signs up before the
+  # purchase page.
+  next_page:
+    service: page_view
+    payload: null
+    next:
+      when:
+        - condition: "attr.pages[attr.seq][0] == 'purchase' and attr.user_id is None"
+          task: register
+      default: page
+
+  # A new order of one to four products, in the Processing status. Each item keeps its
+  # id, product, quantity and price as the order's status changes.
+  order:
+    payload: null
+    set:
+      order_id: {gen: uuid}
+      user_id: {gen: expr, expr: "arg.user_id"}
+      items:
+        gen: repeat
+        times: {gen: weighted, options: {1: 0.7, 2: 0.2, 3: 0.05, 4: 0.05}}
+        value:
+          gen: object
+          fields:
+            id: {gen: uuid}
+            product: {gen: lookup, task: product}
+            quantity: {gen: integer, bounds: [1, 3]}
+      status: Processing
+      created_at: *now
+      updated_at: *now
+      shipped_at: null
+      delivered_at: null
+      cancelled_at: null
+      returned_at: null
+    next: order_row
+  # A picker packs the order and it ships, unless it waits for a picker longer than
+  # its patience and is cancelled.
+  pick_order:
+    resource: pickers
+    service: pick
+    patience: {gen: sample, service: patience}
+    on_renege: cancel_order
+    payload: null
+    set: {status: Shipped, updated_at: *now, shipped_at: *now}
+    next: order_row
+  cancel_order:
+    payload: null
+    set: {status: Cancelled, updated_at: *now, cancelled_at: *now}
+    next: order_row
+  deliver_order:
+    service: transit
+    payload: null
+    set:
+      status: Delivered
+      updated_at: *now
+      delivered_at: *now
+      sent_back: {gen: boolean, p: {gen: param, path: ecommerce.variables.return}}
+    next: order_row
+  return_order:
+    service: return_after
+    payload: null
+    set: {status: Returned, updated_at: *now, returned_at: *now}
+    next: order_row
+  # The orders row after each status change, then a row for each of its items
+  order_row:
+    payload:
+      __table__: cdc.orders
+      id: {gen: attr, name: order_id}
+      user_id: {gen: attr, name: user_id}
+      status: {gen: attr, name: status}
+      num_of_items: {gen: expr, expr: "len(attr.items)"}
+      created_at: {gen: attr, name: created_at}
+      updated_at: {gen: attr, name: updated_at}
+      shipped_at: {gen: attr, name: shipped_at}
+      delivered_at: {gen: attr, name: delivered_at}
+      cancelled_at: {gen: attr, name: cancelled_at}
+      returned_at: {gen: attr, name: returned_at}
+    next: items
+  items:
+    wait:
+      each: attr.items
+      branch: {task: item_row, args: {item: {gen: expr, expr: each.value}}}
+    payload: null
+    next:
+      when:
+        - {condition: "attr.status == 'Processing'", task: pick_order}
+        - {condition: "attr.status == 'Shipped'", task: deliver_order}
+        - {condition: "attr.status == 'Delivered' and attr.sent_back", task: return_order}
+  # One item carries its order's status and times
+  item_row:
+    payload:
+      __table__: cdc.order_items
+      id: {gen: expr, expr: "arg.item.id"}
+      order_id: {gen: attr, name: order_id}
+      product_id: {gen: expr, expr: "arg.item.product.id"}
+      status: {gen: attr, name: status}
+      quantity: {gen: expr, expr: "arg.item.quantity"}
+      sale_price: {gen: expr, expr: "arg.item.product.retail_price"}
+      created_at: {gen: attr, name: created_at}
+      updated_at: {gen: attr, name: updated_at}
+      shipped_at: {gen: attr, name: shipped_at}
+      delivered_at: {gen: attr, name: delivered_at}
+      cancelled_at: {gen: attr, name: cancelled_at}
+      returned_at: {gen: attr, name: returned_at}
+
+# A few rows a second for each table
+batching: {batch_size: 4, flush_interval: 1.0}
+
+# One sink for each table. Each creates its table at the start when it does not exist,
+# and upserts on `id`, so a changed order or user reaches PostgreSQL as an update. Times
+# are ISO 8601 text in UTC. A row's `__table__` names the sink that writes it, and
+# `envelope: false` writes the row alone, with no record of a task being queued or
+# started, and `when` drops the record of an order that leaves the picking queue,
+# which `cancel_order` writes as a row instead.
+egress:
+  - type: Postgres
+    when: &rows {expr: "record.stream_type == 'event' and record.value.status != 'reneged'"}
+    envelope: false
+    config:
+      connection_dsn: &dsn "postgresql://user:password@127.0.0.1:5432/odctl"
+      upsert_keys: &key [id]
+      tables:
+        cdc.dist_centers:
+          primary_key: id
+          columns:
+            id: BIGINT
+            name: TEXT
+            latitude: DOUBLE PRECISION
+            longitude: DOUBLE PRECISION
+  - type: Postgres
+    when: *rows
+    envelope: false
+    config:
+      connection_dsn: *dsn
+      upsert_keys: *key
+      tables:
+        cdc.products:
+          primary_key: id
+          columns:
+            id: BIGINT
+            name: TEXT
+            brand: TEXT
+            category: TEXT
+            department: TEXT
+            retail_price: DOUBLE PRECISION
+            cost: DOUBLE PRECISION
+            sku: TEXT
+            distribution_center_id: BIGINT
+  - type: Postgres
+    when: *rows
+    envelope: false
+    config:
+      connection_dsn: *dsn
+      upsert_keys: *key
+      tables:
+        cdc.users:
+          primary_key: id
+          columns:
+            id: TEXT
+            first_name: TEXT
+            last_name: TEXT
+            email: TEXT
+            age: BIGINT
+            gender: TEXT
+            street_address: TEXT
+            postal_code: TEXT
+            city: TEXT
+            state: TEXT
+            country: TEXT
+            latitude: DOUBLE PRECISION
+            longitude: DOUBLE PRECISION
+            traffic_source: TEXT
+            created_at: TEXT
+            updated_at: TEXT
+  - type: Postgres
+    when: *rows
+    envelope: false
+    config:
+      connection_dsn: *dsn
+      upsert_keys: *key
+      tables:
+        cdc.orders:
+          primary_key: id
+          columns:
+            id: TEXT
+            user_id: TEXT
+            status: TEXT
+            num_of_items: BIGINT
+            created_at: TEXT
+            updated_at: TEXT
+            shipped_at: TEXT
+            delivered_at: TEXT
+            cancelled_at: TEXT
+            returned_at: TEXT
+  - type: Postgres
+    when: *rows
+    envelope: false
+    config:
+      connection_dsn: *dsn
+      upsert_keys: *key
+      tables:
+        cdc.order_items:
+          primary_key: id
+          columns:
+            id: TEXT
+            order_id: TEXT
+            product_id: BIGINT
+            status: TEXT
+            quantity: BIGINT
+            sale_price: DOUBLE PRECISION
+            created_at: TEXT
+            updated_at: TEXT
+            shipped_at: TEXT
+            delivered_at: TEXT
+            cancelled_at: TEXT
+            returned_at: TEXT
+  - type: Postgres
+    when: *rows
+    envelope: false
+    config:
+      connection_dsn: *dsn
+      upsert_keys: *key
+      tables:
+        cdc.events:
+          primary_key: id
+          columns:
+            id: TEXT
+            user_id: TEXT
+            session_id: TEXT
+            sequence_number: BIGINT
+            event_type: TEXT
+            uri: TEXT
+            city: TEXT
+            state: TEXT
+            postal_code: TEXT
+            browser: TEXT
+            traffic_source: TEXT
+            ip_address: TEXT
+            created_at: TEXT
+
+# The statistics of 30 simulated minutes at seed 7, which `desflow test` checks with no
+# service. Every purchase starts one order, and with three pickers no order waits past
+# its patience, so none is cancelled.
+tests:
+  - name: three pickers
+    seed: 7
+    until: 30 min
+    expect:
+      tasks.visit.finished: 1757
+      tasks.order.finished: 548
+      tasks.pick_order.finished: 547
+      tasks.pick_order.reneged: 0
+      tasks.deliver_order.finished: 525
+      tasks.return_order.finished: 42
+      tasks.register.finished: 312
+      tasks.move.finished: 87

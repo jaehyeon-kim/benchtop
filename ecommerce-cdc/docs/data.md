@@ -4,18 +4,18 @@ The tables the [ecommerce-cdc](../README.md) simulation writes, the topics Debez
 
 ## Tables
 
-The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. desflow sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. The models and their bounds are in [`models.py`](../ecommerce/core/models.py).
+The six tables are in PostgreSQL's `cdc` schema, each keyed on `id`. Times are ISO 8601 text in UTC. desflow sends each row as JSON-friendly values, so a time arrives as a string, which a timestamp column does not accept. [`shop.yaml`](../ecommerce/simulation/shop.yaml) gives each table's columns and SQL types, and [`models.py`](../ecommerce/core/models.py) gives the bounds of their values, which the tests check.
 
 | Table | Rows | Columns |
 |---|---|---|
-| `dist_centers` | 10, written once | `id`, `name`, `latitude`, `longitude` |
-| `products` | 260, written once: 5 brands × 26 categories × 2 departments, from a fixed seed | `id`, `name`, `brand`, `category`, `department`, `retail_price`, `cost` (39% to 59% of the price), `sku`, `distribution_center_id` |
+| `dist_centers` | 10, written once from [`dist_centers.csv`](../ecommerce/simulation/dist_centers.csv) | `id`, `name`, `latitude`, `longitude` |
+| `products` | 260, written once from [`products.csv`](../ecommerce/simulation/products.csv): 5 brands × 26 categories × 2 departments | `id`, `name`, `brand`, `category`, `department`, `retail_price`, `cost` (39% to 59% of the price), `sku`, `distribution_center_id` |
 | `users` | 100 at the start, plus each new buyer; updated on a move | `id`, `first_name`, `last_name`, `email`, `age` (12 to 70), `gender`, `street_address`, `postal_code`, `city`, `state`, `country`, `latitude`, `longitude`, `traffic_source`, `created_at`, `updated_at` |
 | `orders` | one per order; updated at each change of status | `id`, `user_id`, `status`, `num_of_items` (1 to 4), `created_at`, `updated_at`, `shipped_at`, `delivered_at`, `cancelled_at`, `returned_at` |
 | `order_items` | one per product in an order; carries its order's status and times | `id`, `order_id`, `product_id`, `status`, `quantity` (1 to 3), `sale_price`, and the order's time columns |
 | `events` | one per page view, including anonymous visitors; inserted only | `id`, `user_id` (null if anonymous), `session_id`, `sequence_number`, `event_type` (`home`, `product`, `cart`, `purchase`), `uri`, `city`, `state`, `postal_code`, `browser`, `traffic_source`, `ip_address`, `created_at` |
 
-Users live in 60 cities, the 10 largest in each of 6 countries, chosen by population. An order's status moves only from `Processing` to `Shipped` or `Cancelled`, from `Shipped` to `Delivered`, and from `Delivered` to `Returned`.
+Users live in 60 cities, the 10 largest in each of 6 countries, chosen by population from [`cities.csv`](../ecommerce/simulation/cities.csv). An order's status moves only from `Processing` to `Shipped` or `Cancelled`, from `Shipped` to `Delivered`, and from `Delivered` to `Returned`.
 
 ## Topics and schemas
 

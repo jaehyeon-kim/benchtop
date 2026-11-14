@@ -1,37 +1,15 @@
-"""The PostgreSQL store: the six tables in the `cdc` schema, and the replication slot."""
+"""The clean-up of PostgreSQL: the six tables in the `cdc` schema, and the replication slot.
+
+The simulation creates the tables, from the `tables` of its sinks in `shop.yaml`.
+"""
 
 import asyncio
 import time
-import types
 
 import asyncpg
-from pydantic import BaseModel
 
 from ecommerce.core.config import DSN, REPLICATION_SLOT, SCHEMA
 from ecommerce.core.models import TABLES
-
-_SQL_TYPES = {str: "TEXT", int: "BIGINT", float: "DOUBLE PRECISION"}
-
-
-def ddl(model: type[BaseModel]) -> str:
-    """
-    Builds the `CREATE TABLE` statement for a model's table, keyed on `id`.
-
-    Args:
-        model (type[BaseModel]): The row model.
-
-    Returns:
-        str: The statement.
-    """
-    columns = []
-    for name, info in model.model_fields.items():
-        kind = info.annotation
-        if isinstance(kind, types.UnionType):  # such as `str | None`
-            kind = next(t for t in kind.__args__ if t is not type(None))
-        key = " PRIMARY KEY" if name == "id" else ""
-        # A Literal, such as the order status, is not in _SQL_TYPES and becomes text.
-        columns.append(f"{name} {_SQL_TYPES.get(kind, 'TEXT')}{key}")
-    return f"CREATE TABLE IF NOT EXISTS {SCHEMA}.{TABLES[model]} ({', '.join(columns)})"
 
 
 def _execute(*statements: str) -> None:
@@ -46,11 +24,6 @@ def _execute(*statements: str) -> None:
             await conn.close()
 
     asyncio.run(run())
-
-
-def create_tables() -> None:
-    """Creates the six tables, if they do not exist yet."""
-    _execute(*(ddl(model) for model in TABLES))
 
 
 def drop_tables() -> None:

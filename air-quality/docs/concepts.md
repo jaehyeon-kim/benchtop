@@ -50,11 +50,11 @@ It says: for station-1, the forecast made on 19 September for the next day expec
 
 A **backfill** creates feature data from history, for a new system or to fill a gap. An **incremental** run processes only what is new since the last run. Here the backfill writes 730 days and the daily run one day, with the same feature code.
 
-Both must be safe to rerun: the daily run upserts on each table's key ([`simulation.py`](../airq/feature/simulation.py)), so a rerun of a day replaces its rows.
+Both must be safe to rerun: every run upserts on each table's key ([`model.yaml`](../airq/feature/model.yaml)), so a rerun of a day replaces its rows.
 
 ## Data validation on write
 
-Validate data before it is written, because one bad row can break a training or inference run later. Here every row is built from a pydantic model with bounds such as PM2.5 between 0 and 500 ([`models.py`](../airq/core/models.py)), so a pipeline stops before writing an impossible value.
+Validate data before it is written, because one bad row can break a training or inference run later. Here the desflow blueprint ([`model.yaml`](../airq/feature/model.yaml)) checks every row against the bounds of its pydantic model, such as PM2.5 between 0 and 500 ([`models.py`](../airq/core/models.py)), and stops the run before it writes an impossible value.
 
 ## Point-in-time correct training data
 

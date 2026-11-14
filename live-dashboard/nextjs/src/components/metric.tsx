@@ -25,6 +25,8 @@ export default function Metric({
     ? "$ ".concat(value.toLocaleString())
     : value.toLocaleString();
   const arrowColor = delta == 0 ? "black" : delta > 0 ? "green" : "red";
+  // The arrow points up, and turns to point down for a fall
+  const arrowTurn = delta < 0 ? "rotate(180deg)" : undefined;
   return (
     <div className="col-span-12 md:col-span-4">
       <Card>
@@ -42,6 +44,7 @@ export default function Metric({
             fill={arrowColor}
             xmlns="http://www.w3.org/2000/svg"
             color="inherit"
+            style={{ transform: arrowTurn }}
           >
             <path fill="none" d="M0 0h24v24H0V0z"></path>
             <path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"></path>

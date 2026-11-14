@@ -7,6 +7,10 @@ textwiser>=2.0.0
 # sentencepiece==0.1.95, which has no wheel for Python 3.11 and fails to build.
 # Floor flair so sentencepiece comes in via transformers[sentencepiece] instead.
 flair>=0.12
+# flair asks for boto3 with no floor, and botocore caps python-dateutil below 3.0.
+# Without a floor, uv keeps python-dateutil 4.0 and falls back to boto3 0.0.3,
+# whose old vendored urllib3 fails to import on Python 3.10 and later.
+boto3>=1.34
 mabwiser>=2.7.4
 mab2rec>=1.3.0
 redis>=7.1.0,<8.0.0

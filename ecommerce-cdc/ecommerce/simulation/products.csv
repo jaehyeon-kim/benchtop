@@ -1,0 +1,261 @@
+id,name,brand,category,department,retail_price,cost,sku,distribution_center_id
+1,Northfield Men's Accessories,Northfield,Accessories,Men,92.29,49.98,SKU-00001,7
+2,Harbor & Pine Men's Accessories,Harbor & Pine,Accessories,Men,11.09,6.47,SKU-00002,8
+3,Kestrel Men's Accessories,Kestrel,Accessories,Men,47.9,26.19,SKU-00003,5
+4,Marlow Men's Accessories,Marlow,Accessories,Men,104.75,48.35,SKU-00004,4
+5,Upland Men's Accessories,Upland,Accessories,Men,57.97,25.88,SKU-00005,2
+6,Northfield Men's Active,Northfield,Active,Men,60.14,26.47,SKU-00006,9
+7,Harbor & Pine Men's Active,Harbor & Pine,Active,Men,86.74,47.88,SKU-00007,3
+8,Kestrel Men's Active,Kestrel,Active,Men,37.64,20.17,SKU-00008,6
+9,Marlow Men's Active,Marlow,Active,Men,49.47,20.29,SKU-00009,7
+10,Upland Men's Active,Upland,Active,Men,38.08,19.73,SKU-00010,4
+11,Northfield Men's Blazers & Jackets,Northfield,Blazers & Jackets,Men,200.49,97.32,SKU-00011,9
+12,Harbor & Pine Men's Blazers & Jackets,Harbor & Pine,Blazers & Jackets,Men,62.8,34.6,SKU-00012,9
+13,Kestrel Men's Blazers & Jackets,Kestrel,Blazers & Jackets,Men,190.62,77.9,SKU-00013,7
+14,Marlow Men's Blazers & Jackets,Marlow,Blazers & Jackets,Men,150.5,82.32,SKU-00014,1
+15,Upland Men's Blazers & Jackets,Upland,Blazers & Jackets,Men,131.32,72.96,SKU-00015,6
+16,Northfield Men's Clothing Sets,Northfield,Clothing Sets,Men,61.56,28.01,SKU-00016,2
+17,Harbor & Pine Men's Clothing Sets,Harbor & Pine,Clothing Sets,Men,55.59,27.99,SKU-00017,4
+18,Kestrel Men's Clothing Sets,Kestrel,Clothing Sets,Men,124.78,52.22,SKU-00018,9
+19,Marlow Men's Clothing Sets,Marlow,Clothing Sets,Men,84.62,34.36,SKU-00019,6
+20,Upland Men's Clothing Sets,Upland,Clothing Sets,Men,132.88,78.35,SKU-00020,8
+21,Northfield Men's Dresses,Northfield,Dresses,Men,29.03,14.52,SKU-00021,2
+22,Harbor & Pine Men's Dresses,Harbor & Pine,Dresses,Men,93.47,51.68,SKU-00022,9
+23,Kestrel Men's Dresses,Kestrel,Dresses,Men,42.87,23.57,SKU-00023,9
+24,Marlow Men's Dresses,Marlow,Dresses,Men,99.38,47.6,SKU-00024,10
+25,Upland Men's Dresses,Upland,Dresses,Men,130.3,59.08,SKU-00025,4
+26,Northfield Men's Fashion Hoodies & Sweatshirts,Northfield,Fashion Hoodies & Sweatshirts,Men,41.71,17.85,SKU-00026,3
+27,Harbor & Pine Men's Fashion Hoodies & Sweatshirts,Harbor & Pine,Fashion Hoodies & Sweatshirts,Men,26.01,15.25,SKU-00027,5
+28,Kestrel Men's Fashion Hoodies & Sweatshirts,Kestrel,Fashion Hoodies & Sweatshirts,Men,53.07,21.65,SKU-00028,3
+29,Marlow Men's Fashion Hoodies & Sweatshirts,Marlow,Fashion Hoodies & Sweatshirts,Men,77.48,44.53,SKU-00029,2
+30,Upland Men's Fashion Hoodies & Sweatshirts,Upland,Fashion Hoodies & Sweatshirts,Men,78.79,45.27,SKU-00030,9
+31,Northfield Men's Intimates,Northfield,Intimates,Men,45.54,25.39,SKU-00031,9
+32,Harbor & Pine Men's Intimates,Harbor & Pine,Intimates,Men,24.33,13.44,SKU-00032,4
+33,Kestrel Men's Intimates,Kestrel,Intimates,Men,56.54,28.72,SKU-00033,7
+34,Marlow Men's Intimates,Marlow,Intimates,Men,40.14,19.27,SKU-00034,6
+35,Upland Men's Intimates,Upland,Intimates,Men,14.28,7.32,SKU-00035,8
+36,Northfield Men's Jeans,Northfield,Jeans,Men,125.41,57.32,SKU-00036,4
+37,Harbor & Pine Men's Jeans,Harbor & Pine,Jeans,Men,72.43,38.84,SKU-00037,2
+38,Kestrel Men's Jeans,Kestrel,Jeans,Men,143.62,66.7,SKU-00038,3
+39,Marlow Men's Jeans,Marlow,Jeans,Men,86.21,47.69,SKU-00039,2
+40,Upland Men's Jeans,Upland,Jeans,Men,155.6,87.3,SKU-00040,4
+41,Northfield Men's Jumpsuits & Rompers,Northfield,Jumpsuits & Rompers,Men,14.94,7.54,SKU-00041,9
+42,Harbor & Pine Men's Jumpsuits & Rompers,Harbor & Pine,Jumpsuits & Rompers,Men,63.39,25.66,SKU-00042,2
+43,Kestrel Men's Jumpsuits & Rompers,Kestrel,Jumpsuits & Rompers,Men,66.24,33.87,SKU-00043,10
+44,Marlow Men's Jumpsuits & Rompers,Marlow,Jumpsuits & Rompers,Men,21.41,8.74,SKU-00044,2
+45,Upland Men's Jumpsuits & Rompers,Upland,Jumpsuits & Rompers,Men,14.17,5.59,SKU-00045,3
+46,Northfield Men's Leggings,Northfield,Leggings,Men,42.47,20.63,SKU-00046,1
+47,Harbor & Pine Men's Leggings,Harbor & Pine,Leggings,Men,52.97,20.9,SKU-00047,7
+48,Kestrel Men's Leggings,Kestrel,Leggings,Men,37.79,21.06,SKU-00048,2
+49,Marlow Men's Leggings,Marlow,Leggings,Men,18.6,9.66,SKU-00049,6
+50,Upland Men's Leggings,Upland,Leggings,Men,28.93,11.64,SKU-00050,8
+51,Northfield Men's Maternity,Northfield,Maternity,Men,21.95,9.0,SKU-00051,7
+52,Harbor & Pine Men's Maternity,Harbor & Pine,Maternity,Men,33.95,15.68,SKU-00052,8
+53,Kestrel Men's Maternity,Kestrel,Maternity,Men,81.87,46.97,SKU-00053,3
+54,Marlow Men's Maternity,Marlow,Maternity,Men,71.33,30.72,SKU-00054,1
+55,Upland Men's Maternity,Upland,Maternity,Men,78.15,32.95,SKU-00055,3
+56,Northfield Men's Outerwear & Coats,Northfield,Outerwear & Coats,Men,122.81,54.05,SKU-00056,10
+57,Harbor & Pine Men's Outerwear & Coats,Harbor & Pine,Outerwear & Coats,Men,261.22,136.65,SKU-00057,1
+58,Kestrel Men's Outerwear & Coats,Kestrel,Outerwear & Coats,Men,153.72,72.55,SKU-00058,10
+59,Marlow Men's Outerwear & Coats,Marlow,Outerwear & Coats,Men,250.08,143.42,SKU-00059,6
+60,Upland Men's Outerwear & Coats,Upland,Outerwear & Coats,Men,133.89,69.83,SKU-00060,3
+61,Northfield Men's Pants,Northfield,Pants,Men,70.77,27.78,SKU-00061,2
+62,Harbor & Pine Men's Pants,Harbor & Pine,Pants,Men,51.22,20.44,SKU-00062,5
+63,Kestrel Men's Pants,Kestrel,Pants,Men,33.73,18.3,SKU-00063,8
+64,Marlow Men's Pants,Marlow,Pants,Men,52.64,23.56,SKU-00064,6
+65,Upland Men's Pants,Upland,Pants,Men,73.35,41.69,SKU-00065,10
+66,Northfield Men's Pants & Capris,Northfield,Pants & Capris,Men,29.72,13.44,SKU-00066,7
+67,Harbor & Pine Men's Pants & Capris,Harbor & Pine,Pants & Capris,Men,86.14,34.99,SKU-00067,10
+68,Kestrel Men's Pants & Capris,Kestrel,Pants & Capris,Men,34.58,15.8,SKU-00068,4
+69,Marlow Men's Pants & Capris,Marlow,Pants & Capris,Men,37.07,17.78,SKU-00069,10
+70,Upland Men's Pants & Capris,Upland,Pants & Capris,Men,89.84,35.6,SKU-00070,10
+71,Northfield Men's Plus,Northfield,Plus,Men,41.04,21.44,SKU-00071,1
+72,Harbor & Pine Men's Plus,Harbor & Pine,Plus,Men,21.09,8.49,SKU-00072,3
+73,Kestrel Men's Plus,Kestrel,Plus,Men,43.26,24.53,SKU-00073,9
+74,Marlow Men's Plus,Marlow,Plus,Men,55.71,21.73,SKU-00074,1
+75,Upland Men's Plus,Upland,Plus,Men,47.07,21.3,SKU-00075,8
+76,Northfield Men's Shorts,Northfield,Shorts,Men,18.69,10.36,SKU-00076,7
+77,Harbor & Pine Men's Shorts,Harbor & Pine,Shorts,Men,26.15,15.43,SKU-00077,2
+78,Kestrel Men's Shorts,Kestrel,Shorts,Men,61.22,25.47,SKU-00078,1
+79,Marlow Men's Shorts,Marlow,Shorts,Men,37.7,19.82,SKU-00079,6
+80,Upland Men's Shorts,Upland,Shorts,Men,16.18,6.36,SKU-00080,1
+81,Northfield Men's Skirts,Northfield,Skirts,Men,96.36,50.6,SKU-00081,10
+82,Harbor & Pine Men's Skirts,Harbor & Pine,Skirts,Men,23.12,9.57,SKU-00082,4
+83,Kestrel Men's Skirts,Kestrel,Skirts,Men,87.51,39.03,SKU-00083,3
+84,Marlow Men's Skirts,Marlow,Skirts,Men,23.31,13.07,SKU-00084,7
+85,Upland Men's Skirts,Upland,Skirts,Men,67.09,26.46,SKU-00085,8
+86,Northfield Men's Sleep & Lounge,Northfield,Sleep & Lounge,Men,75.59,31.23,SKU-00086,5
+87,Harbor & Pine Men's Sleep & Lounge,Harbor & Pine,Sleep & Lounge,Men,27.61,13.64,SKU-00087,6
+88,Kestrel Men's Sleep & Lounge,Kestrel,Sleep & Lounge,Men,26.29,11.07,SKU-00088,1
+89,Marlow Men's Sleep & Lounge,Marlow,Sleep & Lounge,Men,21.05,9.08,SKU-00089,5
+90,Upland Men's Sleep & Lounge,Upland,Sleep & Lounge,Men,58.2,33.72,SKU-00090,10
+91,Northfield Men's Socks,Northfield,Socks,Men,28.11,11.2,SKU-00091,10
+92,Harbor & Pine Men's Socks,Harbor & Pine,Socks,Men,22.76,12.12,SKU-00092,8
+93,Kestrel Men's Socks,Kestrel,Socks,Men,22.44,10.42,SKU-00093,9
+94,Marlow Men's Socks,Marlow,Socks,Men,12.74,5.93,SKU-00094,5
+95,Upland Men's Socks,Upland,Socks,Men,9.19,3.86,SKU-00095,6
+96,Northfield Men's Socks & Hosiery,Northfield,Socks & Hosiery,Men,14.41,6.68,SKU-00096,2
+97,Harbor & Pine Men's Socks & Hosiery,Harbor & Pine,Socks & Hosiery,Men,14.43,7.42,SKU-00097,1
+98,Kestrel Men's Socks & Hosiery,Kestrel,Socks & Hosiery,Men,13.12,5.51,SKU-00098,10
+99,Marlow Men's Socks & Hosiery,Marlow,Socks & Hosiery,Men,13.5,6.33,SKU-00099,9
+100,Upland Men's Socks & Hosiery,Upland,Socks & Hosiery,Men,10.46,4.32,SKU-00100,4
+101,Northfield Men's Suits,Northfield,Suits,Men,162.45,73.36,SKU-00101,9
+102,Harbor & Pine Men's Suits,Harbor & Pine,Suits,Men,139.07,62.66,SKU-00102,6
+103,Kestrel Men's Suits,Kestrel,Suits,Men,90.11,37.1,SKU-00103,9
+104,Marlow Men's Suits,Marlow,Suits,Men,159.59,77.37,SKU-00104,6
+105,Upland Men's Suits,Upland,Suits,Men,70.17,28.99,SKU-00105,8
+106,Northfield Men's Suits & Sport Coats,Northfield,Suits & Sport Coats,Men,126.96,57.18,SKU-00106,3
+107,Harbor & Pine Men's Suits & Sport Coats,Harbor & Pine,Suits & Sport Coats,Men,241.37,124.39,SKU-00107,7
+108,Kestrel Men's Suits & Sport Coats,Kestrel,Suits & Sport Coats,Men,215.02,126.5,SKU-00108,2
+109,Marlow Men's Suits & Sport Coats,Marlow,Suits & Sport Coats,Men,43.27,17.61,SKU-00109,4
+110,Upland Men's Suits & Sport Coats,Upland,Suits & Sport Coats,Men,42.19,16.52,SKU-00110,7
+111,Northfield Men's Sweaters,Northfield,Sweaters,Men,93.45,41.86,SKU-00111,8
+112,Harbor & Pine Men's Sweaters,Harbor & Pine,Sweaters,Men,121.96,64.99,SKU-00112,4
+113,Kestrel Men's Sweaters,Kestrel,Sweaters,Men,77.03,35.72,SKU-00113,5
+114,Marlow Men's Sweaters,Marlow,Sweaters,Men,96.98,41.05,SKU-00114,4
+115,Upland Men's Sweaters,Upland,Sweaters,Men,69.1,27.83,SKU-00115,1
+116,Northfield Men's Swim,Northfield,Swim,Men,91.82,44.1,SKU-00116,4
+117,Harbor & Pine Men's Swim,Harbor & Pine,Swim,Men,33.8,15.87,SKU-00117,4
+118,Kestrel Men's Swim,Kestrel,Swim,Men,72.43,42.69,SKU-00118,4
+119,Marlow Men's Swim,Marlow,Swim,Men,71.13,29.23,SKU-00119,8
+120,Upland Men's Swim,Upland,Swim,Men,52.97,26.45,SKU-00120,3
+121,Northfield Men's Tops & Tees,Northfield,Tops & Tees,Men,21.08,10.73,SKU-00121,8
+122,Harbor & Pine Men's Tops & Tees,Harbor & Pine,Tops & Tees,Men,23.61,11.12,SKU-00122,7
+123,Kestrel Men's Tops & Tees,Kestrel,Tops & Tees,Men,65.9,32.23,SKU-00123,6
+124,Marlow Men's Tops & Tees,Marlow,Tops & Tees,Men,63.34,37.35,SKU-00124,4
+125,Upland Men's Tops & Tees,Upland,Tops & Tees,Men,46.48,26.78,SKU-00125,1
+126,Northfield Men's Underwear,Northfield,Underwear,Men,22.83,13.3,SKU-00126,6
+127,Harbor & Pine Men's Underwear,Harbor & Pine,Underwear,Men,33.82,13.43,SKU-00127,3
+128,Kestrel Men's Underwear,Kestrel,Underwear,Men,35.11,17.92,SKU-00128,3
+129,Marlow Men's Underwear,Marlow,Underwear,Men,34.37,17.41,SKU-00129,8
+130,Upland Men's Underwear,Upland,Underwear,Men,16.53,6.73,SKU-00130,1
+131,Northfield Women's Accessories,Northfield,Accessories,Women,13.7,5.7,SKU-00131,5
+132,Harbor & Pine Women's Accessories,Harbor & Pine,Accessories,Women,8.54,4.77,SKU-00132,6
+133,Kestrel Women's Accessories,Kestrel,Accessories,Women,94.05,51.74,SKU-00133,8
+134,Marlow Women's Accessories,Marlow,Accessories,Women,104.83,51.47,SKU-00134,9
+135,Upland Women's Accessories,Upland,Accessories,Women,57.75,29.15,SKU-00135,9
+136,Northfield Women's Active,Northfield,Active,Women,70.32,41.36,SKU-00136,7
+137,Harbor & Pine Women's Active,Harbor & Pine,Active,Women,81.12,34.98,SKU-00137,9
+138,Kestrel Women's Active,Kestrel,Active,Women,80.78,38.25,SKU-00138,8
+139,Marlow Women's Active,Marlow,Active,Women,76.72,44.84,SKU-00139,10
+140,Upland Women's Active,Upland,Active,Women,57.81,32.39,SKU-00140,1
+141,Northfield Women's Blazers & Jackets,Northfield,Blazers & Jackets,Women,140.11,54.65,SKU-00141,3
+142,Harbor & Pine Women's Blazers & Jackets,Harbor & Pine,Blazers & Jackets,Women,70.98,35.78,SKU-00142,6
+143,Kestrel Women's Blazers & Jackets,Kestrel,Blazers & Jackets,Women,24.8,13.94,SKU-00143,5
+144,Marlow Women's Blazers & Jackets,Marlow,Blazers & Jackets,Women,162.63,75.92,SKU-00144,7
+145,Upland Women's Blazers & Jackets,Upland,Blazers & Jackets,Women,24.14,12.51,SKU-00145,3
+146,Northfield Women's Clothing Sets,Northfield,Clothing Sets,Women,61.0,32.69,SKU-00146,6
+147,Harbor & Pine Women's Clothing Sets,Harbor & Pine,Clothing Sets,Women,40.27,15.99,SKU-00147,7
+148,Kestrel Women's Clothing Sets,Kestrel,Clothing Sets,Women,49.92,28.35,SKU-00148,10
+149,Marlow Women's Clothing Sets,Marlow,Clothing Sets,Women,115.04,60.36,SKU-00149,3
+150,Upland Women's Clothing Sets,Upland,Clothing Sets,Women,125.56,57.83,SKU-00150,1
+151,Northfield Women's Dresses,Northfield,Dresses,Women,102.93,48.1,SKU-00151,1
+152,Harbor & Pine Women's Dresses,Harbor & Pine,Dresses,Women,27.92,15.23,SKU-00152,1
+153,Kestrel Women's Dresses,Kestrel,Dresses,Women,17.77,9.12,SKU-00153,6
+154,Marlow Women's Dresses,Marlow,Dresses,Women,28.48,14.24,SKU-00154,6
+155,Upland Women's Dresses,Upland,Dresses,Women,41.66,22.77,SKU-00155,8
+156,Northfield Women's Fashion Hoodies & Sweatshirts,Northfield,Fashion Hoodies & Sweatshirts,Women,30.77,12.37,SKU-00156,8
+157,Harbor & Pine Women's Fashion Hoodies & Sweatshirts,Harbor & Pine,Fashion Hoodies & Sweatshirts,Women,61.47,35.45,SKU-00157,2
+158,Kestrel Women's Fashion Hoodies & Sweatshirts,Kestrel,Fashion Hoodies & Sweatshirts,Women,83.14,44.29,SKU-00158,5
+159,Marlow Women's Fashion Hoodies & Sweatshirts,Marlow,Fashion Hoodies & Sweatshirts,Women,72.1,29.95,SKU-00159,7
+160,Upland Women's Fashion Hoodies & Sweatshirts,Upland,Fashion Hoodies & Sweatshirts,Women,72.76,41.72,SKU-00160,2
+161,Northfield Women's Intimates,Northfield,Intimates,Women,36.99,20.24,SKU-00161,4
+162,Harbor & Pine Women's Intimates,Harbor & Pine,Intimates,Women,11.99,5.62,SKU-00162,6
+163,Kestrel Women's Intimates,Kestrel,Intimates,Women,49.34,23.74,SKU-00163,2
+164,Marlow Women's Intimates,Marlow,Intimates,Women,59.74,34.07,SKU-00164,1
+165,Upland Women's Intimates,Upland,Intimates,Women,35.28,20.12,SKU-00165,9
+166,Northfield Women's Jeans,Northfield,Jeans,Women,137.64,69.42,SKU-00166,4
+167,Harbor & Pine Women's Jeans,Harbor & Pine,Jeans,Women,70.37,38.37,SKU-00167,9
+168,Kestrel Women's Jeans,Kestrel,Jeans,Women,142.57,67.58,SKU-00168,5
+169,Marlow Women's Jeans,Marlow,Jeans,Women,180.6,75.7,SKU-00169,10
+170,Upland Women's Jeans,Upland,Jeans,Women,100.0,40.68,SKU-00170,2
+171,Northfield Women's Jumpsuits & Rompers,Northfield,Jumpsuits & Rompers,Women,47.16,19.33,SKU-00171,3
+172,Harbor & Pine Women's Jumpsuits & Rompers,Harbor & Pine,Jumpsuits & Rompers,Women,74.88,29.66,SKU-00172,8
+173,Kestrel Women's Jumpsuits & Rompers,Kestrel,Jumpsuits & Rompers,Women,48.5,22.96,SKU-00173,8
+174,Marlow Women's Jumpsuits & Rompers,Marlow,Jumpsuits & Rompers,Women,90.98,52.99,SKU-00174,5
+175,Upland Women's Jumpsuits & Rompers,Upland,Jumpsuits & Rompers,Women,17.83,7.2,SKU-00175,6
+176,Northfield Women's Leggings,Northfield,Leggings,Women,41.21,18.92,SKU-00176,3
+177,Harbor & Pine Women's Leggings,Harbor & Pine,Leggings,Women,8.48,4.96,SKU-00177,6
+178,Kestrel Women's Leggings,Kestrel,Leggings,Women,11.38,6.47,SKU-00178,4
+179,Marlow Women's Leggings,Marlow,Leggings,Women,8.16,4.26,SKU-00179,2
+180,Upland Women's Leggings,Upland,Leggings,Women,43.9,19.7,SKU-00180,1
+181,Northfield Women's Maternity,Northfield,Maternity,Women,88.96,38.84,SKU-00181,3
+182,Harbor & Pine Women's Maternity,Harbor & Pine,Maternity,Women,33.02,13.62,SKU-00182,6
+183,Kestrel Women's Maternity,Kestrel,Maternity,Women,72.06,31.82,SKU-00183,1
+184,Marlow Women's Maternity,Marlow,Maternity,Women,91.49,42.31,SKU-00184,8
+185,Upland Women's Maternity,Upland,Maternity,Women,91.07,40.91,SKU-00185,9
+186,Northfield Women's Outerwear & Coats,Northfield,Outerwear & Coats,Women,192.98,82.37,SKU-00186,2
+187,Harbor & Pine Women's Outerwear & Coats,Harbor & Pine,Outerwear & Coats,Women,65.52,33.16,SKU-00187,3
+188,Kestrel Women's Outerwear & Coats,Kestrel,Outerwear & Coats,Women,131.0,54.94,SKU-00188,3
+189,Marlow Women's Outerwear & Coats,Marlow,Outerwear & Coats,Women,233.25,105.7,SKU-00189,4
+190,Upland Women's Outerwear & Coats,Upland,Outerwear & Coats,Women,97.56,41.64,SKU-00190,6
+191,Northfield Women's Pants,Northfield,Pants,Women,58.52,23.36,SKU-00191,3
+192,Harbor & Pine Women's Pants,Harbor & Pine,Pants,Women,74.31,34.83,SKU-00192,2
+193,Kestrel Women's Pants,Kestrel,Pants,Women,33.49,15.07,SKU-00193,7
+194,Marlow Women's Pants,Marlow,Pants,Women,86.46,36.18,SKU-00194,7
+195,Upland Women's Pants,Upland,Pants,Women,47.93,22.09,SKU-00195,4
+196,Northfield Women's Pants & Capris,Northfield,Pants & Capris,Women,55.03,25.53,SKU-00196,9
+197,Harbor & Pine Women's Pants & Capris,Harbor & Pine,Pants & Capris,Women,23.69,11.18,SKU-00197,7
+198,Kestrel Women's Pants & Capris,Kestrel,Pants & Capris,Women,96.92,55.27,SKU-00198,8
+199,Marlow Women's Pants & Capris,Marlow,Pants & Capris,Women,35.52,15.94,SKU-00199,8
+200,Upland Women's Pants & Capris,Upland,Pants & Capris,Women,26.38,11.27,SKU-00200,2
+201,Northfield Women's Plus,Northfield,Plus,Women,29.88,14.99,SKU-00201,3
+202,Harbor & Pine Women's Plus,Harbor & Pine,Plus,Women,70.86,33.96,SKU-00202,7
+203,Kestrel Women's Plus,Kestrel,Plus,Women,22.65,10.74,SKU-00203,3
+204,Marlow Women's Plus,Marlow,Plus,Women,27.59,13.26,SKU-00204,9
+205,Upland Women's Plus,Upland,Plus,Women,19.26,9.29,SKU-00205,2
+206,Northfield Women's Shorts,Northfield,Shorts,Women,42.1,18.13,SKU-00206,1
+207,Harbor & Pine Women's Shorts,Harbor & Pine,Shorts,Women,60.83,29.19,SKU-00207,8
+208,Kestrel Women's Shorts,Kestrel,Shorts,Women,16.42,7.38,SKU-00208,5
+209,Marlow Women's Shorts,Marlow,Shorts,Women,45.44,19.14,SKU-00209,8
+210,Upland Women's Shorts,Upland,Shorts,Women,21.0,10.28,SKU-00210,4
+211,Northfield Women's Skirts,Northfield,Skirts,Women,60.13,28.32,SKU-00211,1
+212,Harbor & Pine Women's Skirts,Harbor & Pine,Skirts,Women,25.03,14.19,SKU-00212,1
+213,Kestrel Women's Skirts,Kestrel,Skirts,Women,15.02,7.05,SKU-00213,10
+214,Marlow Women's Skirts,Marlow,Skirts,Women,73.93,35.41,SKU-00214,5
+215,Upland Women's Skirts,Upland,Skirts,Women,44.37,25.04,SKU-00215,4
+216,Northfield Women's Sleep & Lounge,Northfield,Sleep & Lounge,Women,60.87,24.17,SKU-00216,5
+217,Harbor & Pine Women's Sleep & Lounge,Harbor & Pine,Sleep & Lounge,Women,40.0,18.32,SKU-00217,9
+218,Kestrel Women's Sleep & Lounge,Kestrel,Sleep & Lounge,Women,79.88,45.38,SKU-00218,3
+219,Marlow Women's Sleep & Lounge,Marlow,Sleep & Lounge,Women,22.9,12.87,SKU-00219,5
+220,Upland Women's Sleep & Lounge,Upland,Sleep & Lounge,Women,55.43,27.98,SKU-00220,4
+221,Northfield Women's Socks,Northfield,Socks,Women,20.16,9.52,SKU-00221,9
+222,Harbor & Pine Women's Socks,Harbor & Pine,Socks,Women,17.47,9.53,SKU-00222,5
+223,Kestrel Women's Socks,Kestrel,Socks,Women,15.14,7.03,SKU-00223,3
+224,Marlow Women's Socks,Marlow,Socks,Women,12.3,6.51,SKU-00224,7
+225,Upland Women's Socks,Upland,Socks,Women,17.43,8.43,SKU-00225,9
+226,Northfield Women's Socks & Hosiery,Northfield,Socks & Hosiery,Women,20.7,9.54,SKU-00226,8
+227,Harbor & Pine Women's Socks & Hosiery,Harbor & Pine,Socks & Hosiery,Women,22.1,9.58,SKU-00227,8
+228,Kestrel Women's Socks & Hosiery,Kestrel,Socks & Hosiery,Women,21.2,9.62,SKU-00228,1
+229,Marlow Women's Socks & Hosiery,Marlow,Socks & Hosiery,Women,16.44,6.88,SKU-00229,8
+230,Upland Women's Socks & Hosiery,Upland,Socks & Hosiery,Women,9.0,4.63,SKU-00230,1
+231,Northfield Women's Suits,Northfield,Suits,Women,96.52,45.19,SKU-00231,1
+232,Harbor & Pine Women's Suits,Harbor & Pine,Suits,Women,152.47,89.31,SKU-00232,2
+233,Kestrel Women's Suits,Kestrel,Suits,Women,134.24,72.27,SKU-00233,7
+234,Marlow Women's Suits,Marlow,Suits,Women,56.73,22.59,SKU-00234,10
+235,Upland Women's Suits,Upland,Suits,Women,56.43,25.06,SKU-00235,5
+236,Northfield Women's Suits & Sport Coats,Northfield,Suits & Sport Coats,Women,196.69,85.63,SKU-00236,10
+237,Harbor & Pine Women's Suits & Sport Coats,Harbor & Pine,Suits & Sport Coats,Women,94.8,38.97,SKU-00237,8
+238,Kestrel Women's Suits & Sport Coats,Kestrel,Suits & Sport Coats,Women,194.19,90.65,SKU-00238,6
+239,Marlow Women's Suits & Sport Coats,Marlow,Suits & Sport Coats,Women,125.84,71.66,SKU-00239,7
+240,Upland Women's Suits & Sport Coats,Upland,Suits & Sport Coats,Women,62.34,35.95,SKU-00240,3
+241,Northfield Women's Sweaters,Northfield,Sweaters,Women,89.47,37.21,SKU-00241,3
+242,Harbor & Pine Women's Sweaters,Harbor & Pine,Sweaters,Women,79.63,43.63,SKU-00242,7
+243,Kestrel Women's Sweaters,Kestrel,Sweaters,Women,77.56,37.88,SKU-00243,4
+244,Marlow Women's Sweaters,Marlow,Sweaters,Women,122.86,58.71,SKU-00244,4
+245,Upland Women's Sweaters,Upland,Sweaters,Women,97.14,38.85,SKU-00245,7
+246,Northfield Women's Swim,Northfield,Swim,Women,27.46,14.19,SKU-00246,3
+247,Harbor & Pine Women's Swim,Harbor & Pine,Swim,Women,51.91,27.96,SKU-00247,3
+248,Kestrel Women's Swim,Kestrel,Swim,Women,42.25,18.99,SKU-00248,2
+249,Marlow Women's Swim,Marlow,Swim,Women,77.16,38.0,SKU-00249,5
+250,Upland Women's Swim,Upland,Swim,Women,82.09,46.51,SKU-00250,7
+251,Northfield Women's Tops & Tees,Northfield,Tops & Tees,Women,41.58,21.47,SKU-00251,9
+252,Harbor & Pine Women's Tops & Tees,Harbor & Pine,Tops & Tees,Women,53.61,27.86,SKU-00252,9
+253,Kestrel Women's Tops & Tees,Kestrel,Tops & Tees,Women,68.93,39.76,SKU-00253,10
+254,Marlow Women's Tops & Tees,Marlow,Tops & Tees,Women,41.37,18.24,SKU-00254,8
+255,Upland Women's Tops & Tees,Upland,Tops & Tees,Women,27.49,12.18,SKU-00255,1
+256,Northfield Women's Underwear,Northfield,Underwear,Women,16.21,7.46,SKU-00256,5
+257,Harbor & Pine Women's Underwear,Harbor & Pine,Underwear,Women,30.06,12.57,SKU-00257,7
+258,Kestrel Women's Underwear,Kestrel,Underwear,Women,30.65,17.9,SKU-00258,7
+259,Marlow Women's Underwear,Marlow,Underwear,Women,27.83,12.08,SKU-00259,4
+260,Upland Women's Underwear,Upland,Underwear,Women,22.81,9.36,SKU-00260,2

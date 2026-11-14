@@ -78,24 +78,27 @@ The sink reads every topic matching `topics.regex`, so a new table's topic is pi
 
 ## Simulation model
 
-The shop is a **discrete-event simulation (DES)**, built with [desflow](https://github.com/jaehyeon-kim/desflow). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed. Here the clock keeps pace with real time (`factor=1`), and the tests use `factor=0`, which runs as fast as it can. `build` in [`run.py`](../ecommerce/simulation/run.py) defines the model, and [`config.py`](../ecommerce/core/config.py) holds its values.
+The shop is a **discrete-event simulation (DES)**, built with [desflow](https://github.com/jaehyeon-kim/desflow). A DES jumps a clock from one event to the next, such as a visitor arriving or an order being packed. Here the clock keeps pace with real time (`factor: 1`), and the tests run the same file unpaced, through `desflow run --sample` and `desflow test`. The model is one YAML file, [`shop.yaml`](../ecommerce/simulation/shop.yaml), which desflow reads and runs with `desflow run`. It holds every value of the model.
 
-desflow is built on SimPy. A **process** is a Python generator that pauses at each `yield` until an event happens, such as a wait ending or a picker coming free. A **resource** has a limited number of slots. A process requests a slot, waits in a queue while none is free, and releases it when done. The model's parts:
+desflow is built on SimPy. An **entity**, such as a visit or an order, goes through a chain of **tasks**, and each task names the next one. desflow runs each entity as a SimPy process, which pauses until an event happens, such as a wait ending or a picker coming free. A **resource** has a limited number of slots. A task requests a slot, waits in a queue while none is free, and releases it when done. The model's parts:
 
-| Part | desflow feature | Here |
+| Part | Key in `shop.yaml` | Here |
 |---|---|---|
-| random arrivals | `add_arrival`, `arrival_loop` | visitors, one a second on average, and address moves, one every 20 seconds; the gaps are exponential |
-| step durations | `add_service` | page view 4 s, packing 5 s, transit 60 s, time to a return 60 s, patience 120 s, each a lognormal mean, so a few steps take much longer and none is negative |
-| limited capacity | `add_resource` | three pickers; an order waits in a queue while all are busy |
-| chances | `add_variable` | 0.6 a visitor is registered, 0.3 a visitor buys, 0.1 an order is returned |
-| a process of its own | `spawn` | each visit, and each order |
-| live changes | the registry and `KafkaIngress` | any value above, while it runs |
-| writes | `PostgresEgress` | one per table, upserting on `id` |
+| random arrivals | `arrivals` | visitors, one a second on average, and address moves, one every 20 seconds; the gaps are exponential |
+| fixed rows at the start | `arrivals` with `initial` | the 10 distribution centres and 260 products, one row each from [`dist_centers.csv`](../ecommerce/simulation/dist_centers.csv) and [`products.csv`](../ecommerce/simulation/products.csv), and 100 users |
+| step durations | `services` | page view 4 s, packing 5 s, transit 60 s, time to a return 60 s, patience 120 s, each a lognormal mean, so a few steps take much longer and none is negative |
+| limited capacity | `resources` | three pickers; an order waits in a queue while all are busy |
+| chances | `variables` | 0.6 a visitor is registered, 0.3 a visitor buys, 0.1 an order is returned |
+| the steps of a visit or an order | `tasks`, with `next` and `spawn` | a visit views its pages in turn, and its purchase page starts an order, an entity of its own |
+| live changes | `ingress` of type `Kafka` | any value above, while it runs |
+| writes | `egress` of type `Postgres` | one per table, upserting on `id` |
 
-An **ingress** brings changes from outside into the running model, and an **egress** writes the model's output out. Each `PostgresEgress` upserts with `ON CONFLICT (id) DO UPDATE`.
+An **ingress** brings changes from outside into the running model, and an **egress** writes the model's output out. Each Postgres egress creates its table when it is missing, from the columns its `tables` entry lists, and upserts with `ON CONFLICT (id) DO UPDATE`. A row's `__table__` field names the egress that writes it.
+
+A user lives in one of the 60 cities of [`cities.csv`](../ecommerce/simulation/cities.csv), chosen by population. Every `users` row comes from one task, `user`: for a new user, a visitor who signs up to buy, and a user who moves. A visit by a registered user takes the newest row of a random user from that task (a `lookup` with `latest_by: id`), so its page views carry the user's current address. An anonymous visitor's page views carry a city of their own and no `user_id`.
 
 An order waits for a picker or for its customer's patience to run out, whichever comes first, and is cancelled in the second case. [Step 4](../README.md#step-4-change-the-simulation-while-it-runs) shows what happens with one picker.
 
-Every value lives in the **registry** under a path, such as `ecommerce.resources.pickers.current_cap`, and a process reads the live value each time it draws one. `KafkaIngress` applies each `{"path_id": ..., "value": ...}` message on `ecommerce-control` to the registry. A lower picker count takes effect as pickers finish their current orders, because desflow takes back only free capacity.
+Every value lives in the **registry** under a path, such as `ecommerce.resources.pickers.current_cap`, and a task reads the live value each time it draws one. The Kafka ingress applies each `{"path": ..., "value": ...}` message on `ecommerce-control` to the registry. A lower picker count takes effect as pickers finish their current orders, because desflow takes back only free capacity.
 
-A changed order is published again with the same `id`, so PostgreSQL updates the row and Debezium sends an update. The rules that do not depend on time, such as which status may follow which, are plain functions in [`shop.py`](../ecommerce/simulation/shop.py), so the tests check them without running the model.
+A changed order is published again with the same `id`, so PostgreSQL updates the row and Debezium sends an update. The `tests` section of `shop.yaml` states the counts of a 30-minute run at seed 7, which `desflow test` checks without any service.

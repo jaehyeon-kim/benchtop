@@ -193,8 +193,7 @@ class Event(BaseModel):
     created_at: str
 
 
-# The table each model's rows go to. Every table is keyed on `id`, and the simulation
-# upserts on it, so a changed order or user reaches PostgreSQL as an update.
+# The table each model's rows go to. Every table is keyed on `id`.
 TABLES: dict[type[BaseModel], str] = {
     DistCenter: "dist_centers",
     Product: "products",
@@ -203,4 +202,3 @@ TABLES: dict[type[BaseModel], str] = {
     OrderItem: "order_items",
     Event: "events",
 }
-KEY = ["id"]

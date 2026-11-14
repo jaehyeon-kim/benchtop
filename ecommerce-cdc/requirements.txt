@@ -1,5 +1,4 @@
-desflow[postgres,kafka]>=0.20.0
-faker==40.40.0
+desflow[postgres,kafka,fake] @ git+https://github.com/jaehyeon-kim/desflow@release-1.0.0-final
 kafka-python==3.0.11
 boto3==1.43.105
 odctl>=1.0,<2

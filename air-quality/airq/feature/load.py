@@ -27,6 +27,8 @@ logger = logging.getLogger(
 )  # __name__ is "__main__" under python -m
 
 BLUEPRINT = Path(__file__).with_name("model.yaml")
+# desflow's sinks log a write that fails and go on, so the load listens for these errors
+SINK_LOGGER = "desflow.connectors.egress"
 _FORECAST_HOURS = 7 * 24  # a forecast is written at the hour it is for
 
 
@@ -60,6 +62,17 @@ def variables(
     }
 
 
+class _SinkErrors(logging.Handler):
+    """Keeps the errors that desflow's sinks log during a run."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
 def load(
     n_days: int = 1,
     until: date | None = None,
@@ -77,7 +90,8 @@ def load(
         reset (bool): Whether to recreate the tables first.
 
     Raises:
-        SystemExit: If the window starts before the stored first hour.
+        SystemExit: If the window starts before the stored first hour, or a sink logs
+            an error, such as a table commit that failed.
     """
     until = until or days.resolve("yesterday")
     start = datetime.combine(until, time(), UTC) - timedelta(days=n_days - 1)
@@ -101,7 +115,18 @@ def load(
     app = SimulationContext.from_yaml(
         BLUEPRINT, variables=variables(origin, start, n_days, seed)
     )
-    app.run()
+    errors = _SinkErrors()
+    sink_logger = logging.getLogger(SINK_LOGGER)
+    sink_logger.addHandler(errors)
+    try:
+        app.run()
+    finally:
+        sink_logger.removeHandler(errors)
+    if errors.messages:
+        raise SystemExit(
+            f"The load is incomplete: {len(errors.messages)} sink errors, the first: "
+            f"{errors.messages[0]}"
+        )
     for identifier in TABLES.values():
         logger.info(
             "%s: %d rows", identifier, cat.load_table(identifier).scan().count()

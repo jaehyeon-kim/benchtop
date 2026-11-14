@@ -99,7 +99,7 @@ uv pip install -r requirements.txt
 odctl init
 
 # 2. make the Airflow container install the packages the pipelines need
-printf '\n_AIRFLOW_PIP_DEPS="desflow[iceberg]@git+https://github.com/jaehyeon-kim/desflow@release-1.0.0-final dateparser==1.4.3"\n' >> .odctl/.env
+printf '\n_AIRFLOW_PIP_DEPS="desflow[iceberg]>=1.0.0 dateparser==1.4.3"\n' >> .odctl/.env
 
 # 3. start the services
 odctl up catalog feast mlflow airflow trino

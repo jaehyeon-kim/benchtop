@@ -146,3 +146,24 @@ def test_a_live_change_to_the_robot_share_takes_effect(tmp_path):
     early = [player for player, (first, *_) in spans.items() if first < 600]
     assert len(late) > 50 and all(player.startswith("RBT-") for player in late)
     assert sum(player.startswith("USR-") for player in early) > 50
+
+
+def test_players_join_teams_with_room_or_are_turned_away_once_the_names_run_out(
+    tmp_path,
+):
+    """Verify that with two team names, teams stay within 15 and the extra players are turned away."""
+    shutil.copy(SCORE_SCHEMA, tmp_path)
+    blueprint = tmp_path / BLUEPRINT.name
+    names = ["Amber-Bilby", "Azure-Dingo"]
+    change = [{"at": 0, "path": "game.variables.team_names", "value": names}]
+    blueprint.write_text(BLUEPRINT.read_text() + f"\nscenario: {json.dumps(change)}\n")
+    scores = run(blueprint, 1, 1200)
+    spans = _spans(scores)
+    assert {name for *_, name in spans.values()} <= set(names)
+    for t in sorted({first for first, *_ in spans.values()}):
+        teams = defaultdict(int)
+        for first, last, team_id, _ in spans.values():
+            teams[team_id] += first <= t <= last
+        assert max(teams.values()) <= 15
+    arrived = max(int(r["key"].split("-")[1]) for r in scores)
+    assert len(spans) < arrived / 2

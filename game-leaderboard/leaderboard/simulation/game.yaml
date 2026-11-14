@@ -104,7 +104,8 @@ arrivals:
 
 tasks:
   # A team with room (chance 0.9, chosen at random) or a new team with a random free name
-  # and the next id. A team of 15 takes no one else.
+  # and the next id. A team of 15 takes no one else. With no free name the player joins a
+  # team with room, and with neither the player is turned away.
   join_team:
     vars:
       teams: {gen: param, path: game.variables.teams}
@@ -116,10 +117,13 @@ tasks:
       form_new: {gen: boolean, p: 0.1}
       u1: {gen: uniform, low: 0, high: 1}
       u2: {gen: uniform, low: 0, high: 1}
-      joins_open_team: {gen: expr, expr: "len(room) > 0 and not form_new"}
+      joins_open_team:
+        gen: expr
+        expr: "len(room) > 0 and (not form_new or len(free) == 0)"
+      full: {gen: expr, expr: "len(room) == 0 and len(free) == 0"}
       team:
         gen: expr
-        expr: "room[int(u1 * len(room))] if joins_open_team else free[int(u2 * len(free))]"
+        expr: "room[int(u1 * len(room))] if joins_open_team else (free[int(u2 * len(free))] if free else None)"
       new_id:
         gen: format
         template: "{n:010d}"
@@ -132,12 +136,20 @@ tasks:
       team_id: {gen: var, name: team_id}
     on:
       - path: game.variables.teams
-        value: {gen: expr, expr: "set_key(teams, team, get_key(teams, team, 0) + 1)"}
+        value:
+          gen: expr
+          expr: "teams if full else set_key(teams, team, get_key(teams, team, 0) + 1)"
       - path: game.variables.team_ids
-        value: {gen: expr, expr: "set_key(ids, team, team_id)"}
+        value: {gen: expr, expr: "ids if full else set_key(ids, team, team_id)"}
       - path: game.variables.formed
-        value: {gen: expr, expr: "formed if joins_open_team else formed + 1"}
-    next: tick
+        value: {gen: expr, expr: "formed if joins_open_team or full else formed + 1"}
+    next:
+      when:
+        - {condition: "full", task: turned_away}
+      default: tick
+  # A player who finds every team full and no free name leaves without playing
+  turned_away:
+    payload: null
   # Wait one round, then leave when the session has ended (before any score), else draw
   # the score
   tick:

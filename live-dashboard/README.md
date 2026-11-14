@@ -82,29 +82,31 @@ odctl up postgres                   # start PostgreSQL
 └─────────────────┴───────────┴─────────┴─────────┴───────────────────┘
 ```
 
-The code connects to PostgreSQL at `127.0.0.1:5432`. [`sales/core/config.py`](./sales/core/config.py) sets the address and every other setting, so there is nothing to configure.
+Everything connects to PostgreSQL at `127.0.0.1:5432`. [`model.yaml`](model.yaml) sets the address and every setting of the simulation, and [`sales/core/config.py`](./sales/core/config.py) sets it for the control command, the server and the dashboards, so there is nothing to configure.
 
 ## Step 1: data producer
 
-The simulation is a model of the shop in [desflow](https://github.com/jaehyeon-kim/desflow), a Python library for discrete-event simulation. It runs in real time: one simulated second takes one second. Start it in its own terminal:
+The simulation is a model of the shop in [desflow](https://github.com/jaehyeon-kim/desflow), a Python library for discrete-event simulation. The model is one YAML file, [`model.yaml`](model.yaml), and the `desflow` command runs it. It runs in real time: one simulated second takes one second.
+
+Start the simulation in its own terminal:
 
 ```bash
-python -m sales.simulation.run      # runs until Ctrl + C; --minutes 10 stops it after ten minutes
+desflow run model.yaml              # runs until Ctrl + C; --until '10 min' stops it after ten minutes
 ```
 
-It creates the `dashboard` schema and its tables, writes the 260 products, and then writes about one order a second. Every choice is random. `--seed 7`, or any other number, makes the choices repeat from run to run.
+It creates the `dashboard` schema and its tables, writes the 260 products of [`products.csv`](products.csv), and then writes about one order a second. The file sets no end time, so the shop runs until you stop it. Every choice is random, and the run logs the seed it drew. `--seed 7`, or any other number, makes the choices repeat from run to run.
 
 The model, in short:
 
 | Part of the shop | How it is modelled | desflow feature |
 |---|---|---|
-| Visitors arrive, four a second on average | a random arrival stream | `add_arrival` and `arrival_loop` |
-| A visitor views two to five pages, then may buy | a process with a wait per page | `spawn` and the `page_view` service time |
-| A buyer is a new user, or a returning one | a chance, 60% returning | a registry variable |
-| An order waits for one of 10 warehouse pickers, and is cancelled if none comes in time | a queue for a limited resource, raced against a patience time | `add_resource` and the `patience` service time |
+| Visitors arrive, four a second on average | a random arrival stream | the `visitor` arrival |
+| A visitor views two to five pages, then may buy | a loop of page views, then a choice by chance | the `pages` task with the `page_view` service time, and `next` with `weights` |
+| A buyer is a new user, or a returning one | a chance, 60% returning | the `returning` variable |
+| An order waits for one of 10 warehouse pickers, and is cancelled if none comes in time | a queue for a limited resource, with a patience time | the `pickers` resource, and `patience` with `on_renege` on the `pick` task |
 | A packed order ships, reaches the customer, and is sometimes returned | timed steps, each changing the order's status | the `pick`, `transit` and `return_after` service times |
-| Each row reaches PostgreSQL | inserted, or updated when an order's status changes | `PostgresEgress`, with `upsert_keys` for orders and items |
-| Changes while the simulation runs | a parameter table the simulation reads every two seconds | `PostgresIngress` and the registry |
+| Each row reaches PostgreSQL | inserted, or updated when an order's status changes | an `egress` entry for each table, with `upsert_keys` for orders and items |
+| Changes while the simulation runs | a parameter table the simulation reads every two seconds | the `ingress` entry and the registry |
 
 To see the rows arrive, count them in PostgreSQL:
 
@@ -205,7 +207,7 @@ python -m pytest tests
 (cd nextjs && pnpm test)
 ```
 
-The Python tests run the model at full speed and check its rules: the catalogue is written first, a seed repeats a run, orders move only through valid statuses, buyers sign up before they order, the pickers limit how many orders are packed at once, and cutting the pickers or raising the visitor rate has the expected effect. They also cover the row bounds, the dashboard calculations and the server's query. The Vitest tests cover the Next.js calculations. GitHub runs both, after the repository's lint checks, on every push to `main`.
+The Python tests run `model.yaml` at full speed with desflow's own commands. `desflow test model.yaml` checks the statistics in the file's `tests` section, such as the number of orders in one simulated hour. The other tests read the first rows of a seeded run (`desflow run model.yaml --sample`) and check the rules: the catalogue is written first, every row is within its bounds, orders move only through valid statuses, an order holds different products, and buyers sign up before they order. The Python tests also cover the dashboard calculations and the server's query. The Vitest tests cover the Next.js calculations. GitHub runs both, after the repository's lint checks, on every push to `main`.
 
 ## Clean up
 

@@ -59,15 +59,16 @@ A **grid** is the rectangle the axes are drawn in. By default, `grid.left`, `gri
 
 A **discrete-event simulation** models a system as events at points in time: a visitor arrives, an order ships. Nothing changes between two events, so the model jumps from one to the next. desflow builds such models on SimPy, and adds live parameters and connectors to databases and message queues.
 
-The parts of the shop's model, in [`run.py`](../sales/simulation/run.py):
+The shop's model is one YAML file, [`model.yaml`](../model.yaml), which `desflow run` builds and runs. Its parts:
 
-- **Processes:** a process is a Python generator that waits with `yield`. `visit` is one visitor, and `fulfil` is one order. `ctx.spawn` starts one, so many run at once.
-- **Arrivals:** `add_arrival("visitor", dist="exponential", rate=4.0)` sets the gaps between visitors. An exponential gap with rate 4 has a mean of a quarter of a second, so four visitors arrive a second on average, at random moments.
-- **Service times:** `add_service` sets how long a step takes. The shop's are lognormal, positive times with a long tail, given by a mean and standard deviation: a page view takes 4 seconds on average.
-- **Resources:** `add_resource("pickers", current_cap=10, max_cap=20)` is a pool of 10 pickers. An order asks for one with `request()`, and waits in a queue if all are busy.
-- **Patience:** `fulfil` waits for whichever comes first, a picker or a patience time of about two minutes (`picker | _wait(app, "patience")`). If patience wins, the order leaves the queue and is cancelled. Leaving a queue after waiting too long is called **reneging**.
-- **Chances:** `add_variable` stores a probability, such as the 30% chance that a visitor buys.
-- **Time:** `factor=1.0` runs one simulated second per second. The tests run the same model with `factor = 0.0`, as fast as possible.
+- **Tasks:** a task is one step of an entity's flow, and `next` names the step after it. A visitor views pages, then goes to `buy_choice`, and a buyer's order goes on to `pick`, `transit` and `returned`. Many entities move through the tasks at once.
+- **Arrivals:** `visitor` has `dist: exponential` and `rate: 4`, the gaps between visitors. An exponential gap with rate 4 has a mean of a quarter of a second, so four visitors arrive a second on average, at random moments. `catalogue` starts 260 entities at time 0, one for each row of [`products.csv`](../products.csv).
+- **Service times:** `services` sets how long a step takes. The shop's are lognormal, positive times with a long tail, given by a mean and standard deviation: a page view takes 4 seconds on average.
+- **Resources:** `pickers` is a pool of 10 pickers (`current_cap: 10`, `max_cap: 20`). The `pick` task holds one while it packs an order, and an order waits in a queue if all are busy.
+- **Patience:** `pick` has a `patience` drawn from the `patience` service, about two minutes. When an order waits longer than that, it leaves the queue and goes to `cancelled` (`on_renege`). Leaving a queue after waiting too long is called **reneging**.
+- **Chances:** `variables` stores the probabilities, such as the 30% chance that a visitor buys (`buy: 0.3`). The `weights` of a task's `next` read them, so a visitor goes to `buyer` with that chance.
+- **Rows:** a task's `payload` is the row it writes, and its `__table__` field names the table. A task with `payload: null` writes nothing.
+- **Time:** `factor: 1` runs one simulated second per second, and `logical_start_time: now` makes the rows' times start at the moment the run starts. The tests run the same file unpaced, as fast as possible.
 
 An order moves through its statuses like this:
 
@@ -78,13 +79,13 @@ An order moves through its statuses like this:
 
 An order that finds no free picker within its patience time, about two minutes, becomes `Cancelled` instead.
 
-An **egress** is a desflow connector that sends the simulation's rows to another system. Each row goes to PostgreSQL through a `PostgresEgress` for its table. Orders and order items are upserted on `id`, so a status change updates the row. The other tables skip a row whose key exists, so a restarted simulation writes the products again without an error.
+An **egress** is a desflow connector that sends the simulation's rows to another system. The file's `egress` section has one PostgreSQL entry for each table, and each entry writes the rows whose `__table__` names its table. Its `tables` setting creates the table when the run starts. Orders and order items are upserted on `id` (`upsert_keys: [id]`), so a status change updates the row. The other tables skip a row whose key exists, so a restarted simulation writes the products again without an error.
 
 ## Live changes through the parameter table
 
-Every rate, time and chance lives in desflow's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The processes read the current value each time they draw one, so a change takes effect from the next draw.
+Every rate, time and chance lives in desflow's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The tasks read the current value each time they draw one, so a change takes effect from the next draw.
 
-Changes reach the registry through `PostgresIngress`, an **ingress**: a connector that brings changes into the simulation. It reads `dashboard.params`:
+Changes reach the registry through an **ingress**, a desflow connector that brings changes into the simulation. The file's `ingress` entry reads `dashboard.params` in PostgreSQL. It creates the table when the run starts, but not the `dashboard` schema, so Step 1 of the README creates the schema first. The ingress then works in three steps:
 
 1. `sales.simulation.control` inserts a row with the path and the new value, marked not applied.
 2. Every two seconds, the ingress sends each row not yet applied to the registry, and marks it applied.

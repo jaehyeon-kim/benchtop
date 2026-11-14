@@ -2,8 +2,7 @@ import json
 import re
 
 from leaderboard.app.reports import LEADERBOARDS
-from leaderboard.core.config import JOB_NAMES, SCHEMA, TOPIC
-from leaderboard.core.models import AVRO_SCHEMA
+from leaderboard.core.config import JOB_NAMES, SCHEMA, SCORE_SCHEMA, TOPIC
 from leaderboard.stores.flink import SQL_DIR
 
 SQL = SQL_DIR
@@ -58,7 +57,7 @@ def test_source_reads_the_topic_in_avro_through_karapace():
 
 def test_source_columns_match_the_avro_schema():
     """Verify that the source table's columns are the Avro record's fields, in order."""
-    fields = [f["name"] for f in json.loads(AVRO_SCHEMA)["fields"]]
+    fields = [f["name"] for f in json.loads(SCORE_SCHEMA.read_text())["fields"]]
     assert _columns(DDL, "scores") == fields
 
 

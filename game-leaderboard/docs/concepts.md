@@ -4,7 +4,7 @@ The ideas behind [game-leaderboard](../README.md): first the Kafka and Flink bas
 
 ## Kafka basics
 
-Each score is a message in the topic `game-scores`. A topic is split into **partitions**, and Kafka keeps the order of messages only within a partition; [`kafka.py`](../leaderboard/stores/kafka.py) creates each topic with one partition. A message's **offset** is its position in its partition, and a **consumer group** records the offset it has reached, so it can carry on from there.
+Each score is a message in the topic `game-scores`. A topic is split into **partitions**, and Kafka keeps the order of messages only within a partition; desflow creates each topic with one partition when the simulation starts. A message's **offset** is its position in its partition, and a **consumer group** records the offset it has reached, so it can carry on from there.
 
 ## Flink basics
 
@@ -17,27 +17,27 @@ Each score is a message in the topic `game-scores`. A topic is split into **part
 
 A **discrete-event simulation** models a system as events at points in time, such as "a player arrives", and moves the clock from one event to the next. Each actor is a **process** that waits for an event, then carries on.
 
-The model is in [`run.py`](../leaderboard/simulation/run.py), built with [desflow](https://github.com/jaehyeon-kim/desflow), and the teams in [`game.py`](../leaderboard/simulation/game.py). It runs in real time (`factor=1.0`): a simulated second takes a real second.
+The model is the [desflow](https://github.com/jaehyeon-kim/desflow) blueprint [`game.yaml`](../leaderboard/simulation/game.yaml), a YAML file that `desflow run` builds and runs with no Python of the project's own. It runs in real time (`factor: 1.0`): a simulated second takes a real second.
 
 | Part of the game | desflow part | Default |
 |---|---|---|
 | Players arrive at random | an **arrival**, `player`, with exponential gaps | one every 2 seconds on average |
-| A player's session | a **process** per player, started for each arrival | lognormal, 5 minutes on average |
+| A player's session | an **entity** per player, which goes through the **tasks** `join_team`, then `tick` and `round` in turn, then `leave_team` | lognormal, 5 minutes on average |
 | Time between rounds | a **service**, `round` for people and `robot_round` for robots | 6 seconds for people, 1.5 for robots |
-| A phone goes offline | a service, `offline`: the score is held, then sent | about 7 minutes |
+| A phone goes offline | a task, `late`, which holds the score for the service `offline`, then sends it | about 7 minutes |
 | Robots and late scores | **variables**, `robot_share` and `late_share` | 5% of players, 1% of scores |
-| Sending the scores | a **Kafka egress**, whose serializer sends only the score | about 27 scores a second |
+| Sending the scores | a **Kafka egress** with `envelope: false`, which sends only the score | about 27 scores a second |
 | Live changes | a **Kafka ingress** on the topic `game-control` | |
 
-An **arrival** draws the time until the next arrival, and a **service** draws how long something takes. An **egress** sends events out of the simulation, and an **ingress** reads changes in.
+An **arrival** draws the time until the next arrival, and a **service** draws how long something takes. An **entity** is one player, and a **task** is one step it takes; each task can send a record when it finishes. An **egress** sends events out of the simulation, and an **ingress** reads changes in.
 
-A session joins a team with room, or forms a new one: a team holds up to 15 players, and one arrival in ten forms a new team anyway. The player plays rounds, each scoring 0 to 20, until the session ends, then leaves the team. An empty team dissolves.
+A session joins a team with room, or forms a new one: a team holds up to 15 players, and one arrival in ten forms a new team anyway. A new team takes the next 10-digit id and a free name. The player plays rounds, each scoring 0 to 20, until the session ends, then leaves the team. An empty team dissolves. The teams playing now are three more variables (`teams`, `team_ids` and `formed`), which `join_team` and `leave_team` update. Only `round` and `late` send a record: the other tasks have `payload: null`, so joining, leaving and waiting for a round send nothing.
 
 Every parameter is kept in desflow's **registry** under a path, such as `game.variables.robot_share`, and read again at each draw. [`leaderboard.simulation.control`](../leaderboard/simulation/control.py) sends a new value to `game-control`, and the ingress writes it into the registry.
 
 ## Avro and the schema registry
 
-Each score is encoded in **Avro**, a binary format that needs its **schema** to decode. The serializer in [`kafka.py`](../leaderboard/stores/kafka.py) registers `AVRO_SCHEMA` ([`models.py`](../leaderboard/core/models.py)) in Karapace under the subject `game-scores-value`, and puts the schema's id in front of each score. Flink's `avro-confluent` format reads that id to fetch the schema, and decodes into the source table's columns, so the two must match.
+Each score is encoded in **Avro**, a binary format that needs its **schema** to decode. The blueprint's egress uses desflow's `confluent_avro` serializer, which registers [`score.avsc`](../leaderboard/simulation/score.avsc) in Karapace under the subject `game-scores-value`, and puts the schema's id in front of each score. Flink's `avro-confluent` format reads that id to fetch the schema, and decodes into the source table's columns, so the two must match.
 
 ## Event time and processing time
 

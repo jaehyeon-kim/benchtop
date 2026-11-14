@@ -1,0 +1,214 @@
+# The game as a desflow blueprint, sending each score to Kafka in Avro.
+#
+# Players arrive at random, and each plays a session of rounds; robots play far faster.
+# A score earned while a device is offline arrives minutes later, with the time it was
+# earned. Every rate, time and share is a registry parameter that `control` changes live.
+# Run: desflow run leaderboard/simulation/game.yaml   (Ctrl + C to stop)
+simulation:
+  sim_id: game   # the first part of every registry path; core/config.py SIM_ID
+  factor: 1.0    # a simulated second takes a real second
+  timezone: UTC
+
+# Counts from an hour at one seed, run unpaced by `desflow test`. A desflow release may
+# draw its numbers differently; `desflow test --fix` then writes the new counts.
+tests:
+  - name: an hour of the game
+    seed: 1
+    until: 3600
+    expect:
+      tasks.join_team.finished: 1798
+      tasks.leave_team.finished: 1640
+      tasks.round.finished: 99173
+      tasks.late.finished: 873
+
+variables:
+  robot_share: 0.05
+  late_share: 0.01
+  teams: {}      # the players in each team playing now, by team name
+  team_ids: {}   # the 10-digit id of each team playing now, by team name
+  formed: 0      # how many teams have formed, which numbers the next team id
+  # A colour and an animal, written out because an expression takes one clause of a
+  # comprehension
+  team_names: ["Amber-Bilby", "Amber-Dingo", "Amber-Emu", "Amber-Koala",
+               "Amber-Kookaburra", "Amber-Numbat", "Amber-Platypus", "Amber-Quokka",
+               "Amber-Wallaby", "Amber-Wombat", "Azure-Bilby", "Azure-Dingo",
+               "Azure-Emu", "Azure-Koala", "Azure-Kookaburra", "Azure-Numbat",
+               "Azure-Platypus", "Azure-Quokka", "Azure-Wallaby", "Azure-Wombat",
+               "Coral-Bilby", "Coral-Dingo", "Coral-Emu", "Coral-Koala",
+               "Coral-Kookaburra", "Coral-Numbat", "Coral-Platypus", "Coral-Quokka",
+               "Coral-Wallaby", "Coral-Wombat", "Fuchsia-Bilby", "Fuchsia-Dingo",
+               "Fuchsia-Emu", "Fuchsia-Koala", "Fuchsia-Kookaburra", "Fuchsia-Numbat",
+               "Fuchsia-Platypus", "Fuchsia-Quokka", "Fuchsia-Wallaby",
+               "Fuchsia-Wombat", "Indigo-Bilby", "Indigo-Dingo", "Indigo-Emu",
+               "Indigo-Koala", "Indigo-Kookaburra", "Indigo-Numbat", "Indigo-Platypus",
+               "Indigo-Quokka", "Indigo-Wallaby", "Indigo-Wombat", "Jade-Bilby",
+               "Jade-Dingo", "Jade-Emu", "Jade-Koala", "Jade-Kookaburra", "Jade-Numbat",
+               "Jade-Platypus", "Jade-Quokka", "Jade-Wallaby", "Jade-Wombat",
+               "Magenta-Bilby", "Magenta-Dingo", "Magenta-Emu", "Magenta-Koala",
+               "Magenta-Kookaburra", "Magenta-Numbat", "Magenta-Platypus",
+               "Magenta-Quokka", "Magenta-Wallaby", "Magenta-Wombat", "Olive-Bilby",
+               "Olive-Dingo", "Olive-Emu", "Olive-Koala", "Olive-Kookaburra",
+               "Olive-Numbat", "Olive-Platypus", "Olive-Quokka", "Olive-Wallaby",
+               "Olive-Wombat", "Ruby-Bilby", "Ruby-Dingo", "Ruby-Emu", "Ruby-Koala",
+               "Ruby-Kookaburra", "Ruby-Numbat", "Ruby-Platypus", "Ruby-Quokka",
+               "Ruby-Wallaby", "Ruby-Wombat", "Teal-Bilby", "Teal-Dingo", "Teal-Emu",
+               "Teal-Koala", "Teal-Kookaburra", "Teal-Numbat", "Teal-Platypus",
+               "Teal-Quokka", "Teal-Wallaby", "Teal-Wombat"]
+
+services:
+  session: {dist: lognormal, mean: 300, std: 120}   # 5 minutes
+  round: {dist: lognormal, mean: 6, std: 2}
+  robot_round: {dist: normal, mean: 1.5, std: 0.3}
+  offline: {dist: normal, mean: 420, std: 120}      # 7 minutes
+
+# Flink's source table reads the score's own fields, so the Avro value is the score alone,
+# registered under the subject game-scores-value. The topic is created on first use.
+egress:
+  - type: Kafka
+    when: events
+    envelope: false
+    batch_size: 25   # about a second of scores
+    config:
+      bootstrap_servers: "${KAFKA_BROKER:-127.0.0.1:9092}"
+      event_topic: game-scores
+      serializer:
+        type: confluent_avro
+        registry_url: "${REGISTRY_URL:-http://127.0.0.1:8081}"
+        schema_file: score.avsc
+
+# Parameter changes from `control`; the ingress creates the topic if it is missing
+ingress:
+  - type: Kafka
+    config: {bootstrap_servers: "${KAFKA_BROKER:-127.0.0.1:9092}", topic: game-control}
+
+arrivals:
+  player:
+    dist: exponential
+    rate: 0.5   # a player every 2 seconds on average
+    spawn: join_team
+    vars:
+      robot:
+        gen: boolean
+        p: {gen: param, path: game.variables.robot_share}
+    # USR- and a number for a person, RBT- for a robot
+    key:
+      gen: format
+      template: "{p}-{n:06d}"
+      names:
+        p: {gen: when, condition: robot, then: RBT, else: USR}
+        n: {gen: sequence, start: 1}
+    attributes:
+      robot: {gen: var, name: robot}
+      born: {gen: expr, expr: t}
+      session_len: {gen: sample, service: session}
+
+tasks:
+  # A team with room (chance 0.9, chosen at random) or a new team with a random free name
+  # and the next id. A team of 15 takes no one else.
+  join_team:
+    vars:
+      teams: {gen: param, path: game.variables.teams}
+      ids: {gen: param, path: game.variables.team_ids}
+      formed: {gen: param, path: game.variables.formed}
+      room: {gen: expr, expr: "[k for k in teams if teams[k] < 15]"}
+      names: {gen: param, path: game.variables.team_names}
+      free: {gen: expr, expr: "[f for f in names if f not in teams]"}
+      form_new: {gen: boolean, p: 0.1}
+      u1: {gen: uniform, low: 0, high: 1}
+      u2: {gen: uniform, low: 0, high: 1}
+      joins_open_team: {gen: expr, expr: "len(room) > 0 and not form_new"}
+      team:
+        gen: expr
+        expr: "room[int(u1 * len(room))] if joins_open_team else free[int(u2 * len(free))]"
+      new_id:
+        gen: format
+        template: "{n:010d}"
+        names:
+          n: {gen: expr, expr: "formed + 1"}
+      team_id: {gen: expr, expr: "get_key(ids, team, new_id)"}
+    payload: null
+    set:
+      team: {gen: var, name: team}
+      team_id: {gen: var, name: team_id}
+    on:
+      - path: game.variables.teams
+        value: {gen: expr, expr: "set_key(teams, team, get_key(teams, team, 0) + 1)"}
+      - path: game.variables.team_ids
+        value: {gen: expr, expr: "set_key(ids, team, team_id)"}
+      - path: game.variables.formed
+        value: {gen: expr, expr: "formed if joins_open_team else formed + 1"}
+    next: tick
+  # Wait one round, then leave when the session has ended (before any score), else draw
+  # the score
+  tick:
+    service_time:
+      gen: expr
+      expr: "robot_round if attr.robot else human_round"
+      names:
+        robot_round: {gen: sample, service: robot_round}
+        human_round: {gen: sample, service: round}
+    vars:
+      is_late:
+        gen: boolean
+        p: {gen: param, path: game.variables.late_share}
+      score: {gen: integer, bounds: [0, 20]}
+      ended: {gen: expr, expr: "t - attr.born > attr.session_len"}
+    payload: null
+    set:
+      score: {gen: var, name: score}
+    # A late score is sent by its own process with the time it was earned, and the
+    # session goes on
+    spawn:
+      task: late
+      count: {gen: expr, expr: "1 if is_late and not ended else 0"}
+      args:
+        player: {gen: entity}
+        team_id: {gen: attr, name: team_id}
+        team_name: {gen: attr, name: team}
+        score: {gen: var, name: score}
+        earned_ms:
+          gen: format_time
+          format: epoch_ms
+          time: {gen: now}
+    next:
+      when:
+        - {condition: "ended", task: leave_team}
+        - {condition: "is_late", task: tick}
+      default: round
+  round:
+    payload:
+      user_id: {gen: entity}
+      team_id: {gen: attr, name: team_id}
+      team_name: {gen: attr, name: team}
+      score: {gen: attr, name: score}
+      event_time_millis:
+        gen: format_time
+        format: epoch_ms
+        time: {gen: now}
+      event_type: normal
+    next: tick
+  late:
+    service: offline
+    key: {gen: expr, expr: arg.player}
+    payload:
+      user_id: {gen: expr, expr: arg.player}
+      team_id: {gen: expr, expr: arg.team_id}
+      team_name: {gen: expr, expr: arg.team_name}
+      score: {gen: expr, expr: arg.score}
+      event_time_millis: {gen: expr, expr: arg.earned_ms}
+      event_type: late
+  # A team with no player left is removed
+  leave_team:
+    vars:
+      teams: {gen: param, path: game.variables.teams}
+      ids: {gen: param, path: game.variables.team_ids}
+      last: {gen: expr, expr: "teams[attr.team] == 1"}
+    payload: null
+    on:
+      - path: game.variables.teams
+        value:
+          gen: expr
+          expr: "drop_key(teams, attr.team) if last else set_key(teams, attr.team,
+            teams[attr.team] - 1)"
+      - path: game.variables.team_ids
+        value: {gen: expr, expr: "drop_key(ids, attr.team) if last else ids"}

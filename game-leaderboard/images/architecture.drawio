@@ -10,7 +10,7 @@
                 <mxCell id="sub" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Comic Sans MS;fontSize=13;fontStyle=2;strokeColor=none;fillColor=none;" value="four Flink SQL jobs keep four top 10 leaderboards up to date, on odctl" vertex="1">
                     <mxGeometry x="40" y="46" width="800" height="24" as="geometry"/>
                 </mxCell>
-                <mxCell id="sim" parent="1" style="sketch=1;fontFamily=Comic Sans MS;strokeWidth=2;html=1;rounded=1;whiteSpace=wrap;fontSize=13;fillColor=#f5f5f5;strokeColor=#666666;" value="&lt;b&gt;Game simulation&lt;/b&gt;&lt;br&gt;leaderboard.simulation.run&lt;br&gt;desflow: players arrive and play sessions of rounds; robots play faster" vertex="1">
+                <mxCell id="sim" parent="1" style="sketch=1;fontFamily=Comic Sans MS;strokeWidth=2;html=1;rounded=1;whiteSpace=wrap;fontSize=13;fillColor=#f5f5f5;strokeColor=#666666;" value="&lt;b&gt;Game simulation&lt;/b&gt;&lt;br&gt;simulation/game.yaml&lt;br&gt;desflow: players arrive and play sessions of rounds; robots play faster" vertex="1">
                     <mxGeometry x="40" y="100" width="210" height="130" as="geometry"/>
                 </mxCell>
                 <mxCell id="kafka" parent="1" style="sketch=1;fontFamily=Comic Sans MS;strokeWidth=2;html=1;rounded=1;whiteSpace=wrap;fontSize=13;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Kafka topic game-scores&lt;/b&gt;&lt;br&gt;Avro, with the schema in Karapace" vertex="1">

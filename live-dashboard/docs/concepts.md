@@ -85,7 +85,7 @@ An **egress** is a desflow connector that sends the simulation's rows to another
 
 Every rate, time and chance lives in desflow's **registry**, a store of named parameters such as `sales.arrival.visitor.rate`. The tasks read the current value each time they draw one, so a change takes effect from the next draw.
 
-Changes reach the registry through an **ingress**, a desflow connector that brings changes into the simulation. The file's `ingress` entry reads `dashboard.params` in PostgreSQL. It creates the table when the run starts, but not the `dashboard` schema, so Step 1 of the README creates the schema first. The ingress then works in three steps:
+Changes reach the registry through an **ingress**, a desflow connector that brings changes into the simulation. The file's `ingress` entry reads `dashboard.params` in PostgreSQL. It creates the `dashboard` schema and the table when the run starts. The ingress then works in three steps:
 
 1. `sales.simulation.control` inserts a row with the path and the new value, marked not applied.
 2. Every two seconds, the ingress sends each row not yet applied to the registry, and marks it applied.

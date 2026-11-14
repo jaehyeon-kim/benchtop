@@ -1,0 +1,340 @@
+# The simulation that writes the four tables of the feature pipeline, one simulated hour
+# at a time. airq/feature/load.py runs it with these variables:
+#   START         the first hour of the backfill, stored on the tables as airq.origin
+#   SEED          the seed, stored on the tables as airq.seed
+#   HOURS         the hours from START to the end of the last day to load
+#   RUN_HOURS     HOURS + 168, so the forecasts issued in the last hours are written
+#   WARMUP_HOURS  the hours from START to the first day to load; nothing before is written
+# A run always starts at START with the stored seed, so a day gets the same values in
+# the backfill and in a daily run.
+simulation:
+  sim_id: air_quality
+  factor: 0
+  random_seed: ${SEED:-42}
+  logical_start_time: "${START}"
+  timezone: UTC
+  lag_interval: 3600
+  warmup: "${WARMUP_HOURS:-0}h"
+
+# a forecast is written at the hour it is for, up to 7 days after it was issued
+run: {until: "${RUN_HOURS}h"}
+
+egress:
+  - type: Iceberg
+    when: events
+    # one buffer for the whole run, so one Iceberg commit per table
+    batch_size: 500000
+    config:
+      # PyIceberg reads the PYICEBERG_CATALOG__ODCTL__* variables (airq/core/config.py)
+      catalog: {name: odctl}
+      # a run of a day again replaces its rows
+      upsert_keys:
+        airq.observations: [location_id, measured_at]
+        airq.weather_forecasts: [location_id, forecast_for, lead_days]
+        airq.daily_weather: [location_id, day, lead_days]
+        airq.daily_air_quality: [location_id, day]
+      # the column types of airq/stores/iceberg.py, which creates the tables
+      schemas:
+        airq.observations:
+          location_id: string
+          measured_at: timestamptz
+          pm2_5: double
+        airq.weather_forecasts:
+          location_id: string
+          forecast_for: timestamptz
+          issued_at: timestamptz
+          lead_days: int
+          temperature_2m: double
+          precipitation: double
+          wind_speed_10m: double
+          wind_direction_10m: double
+        airq.daily_weather:
+          location_id: string
+          day: date
+          lead_days: int
+          issued_on: date
+          temperature_2m: double
+          wind_speed_10m: double
+          wet_hours: int
+        airq.daily_air_quality:
+          location_id: string
+          day: date
+          pm2_5: double
+          is_weekend: boolean
+          pm2_5_lag1: double
+
+arrivals:
+  # one entity that repeats every hour, so its attributes carry the weather from hour
+  # to hour; temperature and wind are deviations from their daily and yearly cycles
+  hour:
+    dist: constant
+    value: 3600
+    count: 1
+    first_at: 0
+    spawn: weather
+    attributes:
+      temp: 0
+      wind: 0
+      wet: false
+      rain: 0
+      direction: 180
+      prev_mean: 0
+      act_pm: 0
+      act_temp: 0
+      act_wind: 0
+      act_rain: 0
+      act_direction: 0
+
+tasks:
+  # this hour's true state is in `attr`; the next hour's is drawn now and kept by `set`
+  weather:
+    vars:
+      epoch_s: {gen: format_time, format: epoch_s}
+      # a yearly cycle and a daily cycle, plus this hour's deviation
+      temperature:
+        gen: expr
+        expr: "18 + 5 * cos(2 * 3.141592653589793 * (epoch_s / 3600 - 360) / 8766) + 3 *
+          cos(2 * 3.141592653589793 * (epoch_s / 3600 - 4.5) / 24) + attr.temp"
+      wind:
+        gen: expr
+        expr: "max(10 + 2.4 * cos(2 * 3.141592653589793 * (epoch_s / 3600 - 5.5) / 24) +
+          attr.wind, 0)"
+      # 1 January 1970 was a Thursday, so +3 counts from Monday
+      weekday: {gen: expr, expr: "1 if ((epoch_s // 86400 + 3) % 7) < 5 else 0"}
+      # PM2.5 is higher on weekdays and in the evening (peak at 17 UTC), and lower
+      # when it is windy or wet
+      pm:
+        gen: expr
+        expr: "max(exp(2.05 + 0.4 * weekday + 0.12 * cos(2 * 3.141592653589793 *
+          (epoch_s / 3600 - 17) / 24) - 0.1 * (wind - 10) - 0.4 * (1 if attr.wet else 0)
+          + e) - 1, 0)"
+        names:
+          e: {gen: normal, mean: 0, std: 0.1}
+        decimals: 2
+      # the next hour keeps most of this hour's deviations
+      n_temp:
+        gen: expr
+        expr: "0.96 * attr.temp + e"
+        names:
+          e: {gen: normal, mean: 0, std: 0.8}
+      n_wind:
+        gen: expr
+        expr: "0.9 * attr.wind + e"
+        names:
+          e: {gen: normal, mean: 0, std: 1.8}
+      n_wet:
+        gen: boolean
+        p: {gen: expr, expr: "0.78 if attr.wet else 0.06"}
+      # rain in a wet hour is exponential with a mean of 0.6 mm
+      n_rain:
+        gen: expr
+        expr: "r if n_wet else 0"
+        names:
+          r: {gen: sample, dist: exponential, rate: 1.6667}
+      n_direction:
+        gen: expr
+        expr: "(attr.direction + e) % 360"
+        names:
+          e: {gen: normal, mean: 0, std: 27}
+    payload: null
+    next: fanout
+    set:
+      act_pm: {gen: var, name: pm}
+      act_temp: {gen: var, name: temperature}
+      act_wind: {gen: var, name: wind}
+      act_rain: {gen: expr, expr: attr.rain}
+      act_direction: {gen: expr, expr: attr.direction}
+      temp: {gen: var, name: n_temp}
+      wind: {gen: var, name: n_wind}
+      wet: {gen: var, name: n_wet}
+      rain: {gen: var, name: n_rain}
+      direction: {gen: var, name: n_direction}
+  # the rows of this hour; `t` is the seconds since START
+  fanout:
+    open:
+      readings:
+        each: "1 if int(t // 3600) < ${HOURS} else 0"
+        branch:
+          task: reading
+          args:
+            pm: {gen: expr, expr: attr.act_pm}
+      # the forecasts of this hour issued 1 to 7 days ago, since START. Every run draws
+      # the same forecasts, whatever days it loads, so a day gets the same values in
+      # the backfill and in a daily run; `forecast` keeps those the run loads
+      forecasts:
+        each: "range(1, min(7, int(t // 3600) // 24) + 1)"
+        branch:
+          task: forecast
+          args:
+            lead: {gen: expr, expr: each.value}
+            temp: {gen: expr, expr: attr.act_temp}
+            wind: {gen: expr, expr: attr.act_wind}
+            rain: {gen: expr, expr: attr.act_rain}
+            direction: {gen: expr, expr: attr.act_direction}
+      first_day:
+        each: "1 if int(t // 3600) == 23 else 0"
+        branch: {task: day_one}
+      daily_air:
+        each: "1 if int(t // 3600) % 24 == 23 and int(t // 3600) >= 47 and int(t //
+          3600) < ${HOURS} else 0"
+        branch: {task: daily_air_quality}
+      daily_weather:
+        each: "range(max(1, int(t // 86400) - ${HOURS} // 24 + 1), min(7, int(t //
+          86400) - ${WARMUP_HOURS:-0} // 24) + 1) if int(t // 3600) % 24 == 23 else []"
+        branch:
+          task: daily_weather
+          args:
+            lead: {gen: expr, expr: each.value}
+    payload: null
+  # table airq.observations. Each task that writes a row fails the run when the row is
+  # outside the bounds of airq/core/models.py, so an impossible value is not written
+  reading:
+    fail: "not 0 <= arg.pm <= 500"
+    payload:
+      location_id: station-1
+      measured_at: {gen: now}
+      pm2_5: {gen: expr, expr: arg.pm}
+      __table__: airq.observations
+  # a forecast: the true value plus an error that grows with the lead. It goes on to
+  # forecast_row when it was issued between WARMUP_HOURS and HOURS
+  forecast:
+    vars:
+      t2m:
+        gen: expr
+        expr: "arg.temp + e"
+        names:
+          e:
+            gen: normal
+            mean: 0
+            std: {gen: expr, expr: "1 + 0.2 * arg.lead"}
+        decimals: 1
+      precipitation:
+        gen: expr
+        expr: "arg.rain * exp(e)"
+        names:
+          e:
+            gen: normal
+            mean: 0
+            std: {gen: expr, expr: "0.3 + 0.1 * arg.lead"}
+        decimals: 1
+      wind_speed:
+        gen: expr
+        expr: "arg.wind * exp(e)"
+        names:
+          e:
+            gen: normal
+            mean: 0
+            std: {gen: expr, expr: "0.1 + 0.03 * arg.lead"}
+        decimals: 1
+      wind_direction:
+        gen: expr
+        expr: "round(arg.direction + e) % 360"
+        names:
+          e:
+            gen: normal
+            mean: 0
+            std: {gen: expr, expr: "35 + 5 * arg.lead"}
+    payload: null
+    set_args:
+      t2m: {gen: var, name: t2m}
+      precipitation: {gen: var, name: precipitation}
+      wind_speed: {gen: var, name: wind_speed}
+      wind_direction: {gen: var, name: wind_direction}
+    next:
+      when:
+        - condition: "${WARMUP_HOURS:-0} <= int(t // 3600) - 24 * arg.lead < ${HOURS}"
+          task: forecast_row
+  # table airq.weather_forecasts
+  forecast_row:
+    # daily_weather reads the forecasts of the day that ends, at most 7 an hour, so
+    # two days of rows are kept rather than the default million
+    history: 336
+    fail: "not (1 <= arg.lead <= 7 and -60 <= arg.t2m <= 60 and 0 <= arg.precipitation
+      <= 500 and 0 <= arg.wind_speed <= 400 and 0 <= arg.wind_direction < 360)"
+    payload:
+      location_id: station-1
+      forecast_for: {gen: now}
+      issued_at:
+        gen: now
+        offset: {gen: expr, expr: "-86400 * arg.lead"}
+      lead_days: {gen: expr, expr: arg.lead}
+      temperature_2m: {gen: expr, expr: arg.t2m}
+      precipitation: {gen: expr, expr: arg.precipitation}
+      wind_speed_10m: {gen: expr, expr: arg.wind_speed}
+      wind_direction_10m: {gen: expr, expr: arg.wind_direction}
+      __table__: airq.weather_forecasts
+  # the first day has no air quality row, because it has no day before; its mean is
+  # kept for the second day
+  day_one:
+    vars:
+      m: {gen: aggregate, task: reading, path: pm2_5, last: 24, function: mean}
+    payload: null
+    set:
+      prev_mean: {gen: var, name: m}
+  # table airq.daily_air_quality: the mean of the day's 24 readings
+  daily_air_quality:
+    fail: "not (0 <= m <= 500 and 0 <= attr.prev_mean <= 500)"
+    vars:
+      m: {gen: aggregate, task: reading, path: pm2_5, last: 24, function: mean}
+      epoch_s: {gen: format_time, format: epoch_s}
+    payload:
+      location_id: station-1
+      day: {gen: format_time, format: "%Y-%m-%d"}
+      pm2_5: {gen: expr, expr: "round(m, 2)"}
+      is_weekend: {gen: expr, expr: "((epoch_s // 86400 + 3) % 7) >= 5"}
+      pm2_5_lag1: {gen: expr, expr: "round(attr.prev_mean, 2)"}
+      __table__: airq.daily_air_quality
+    set:
+      prev_mean: {gen: var, name: m}
+  # table airq.daily_weather: one row per lead for the forecast day that ends now
+  daily_weather:
+    fail: "not (1 <= arg.lead <= 7 and -60 <= temp_mean <= 60 and 0 <= wind_mean <= 400
+      and 0 <= wet <= 24)"
+    vars:
+      day: {gen: format_time, format: "%Y-%m-%d"}
+      temp_mean:
+        gen: aggregate
+        task: forecast_row
+        path: temperature_2m
+        last: 24
+        function: mean
+        where: "lead_days == arg.lead and forecast_for[:10] == day"
+      wind_mean:
+        gen: aggregate
+        task: forecast_row
+        path: wind_speed_10m
+        last: 24
+        function: mean
+        where: "lead_days == arg.lead and forecast_for[:10] == day"
+      wet:
+        gen: aggregate
+        task: forecast_row
+        last: 24
+        function: count
+        where: "lead_days == arg.lead and forecast_for[:10] == day and precipitation >
+          0"
+    payload:
+      location_id: station-1
+      day: {gen: var, name: day}
+      lead_days: {gen: expr, expr: arg.lead}
+      issued_on:
+        gen: format_time
+        time:
+          gen: now
+          offset: {gen: expr, expr: "-86400 * arg.lead"}
+        format: "%Y-%m-%d"
+      temperature_2m: {gen: expr, expr: "round(temp_mean, 2)"}
+      wind_speed_10m: {gen: expr, expr: "round(wind_mean, 2)"}
+      wet_hours: {gen: var, name: wet}
+      __table__: airq.daily_weather
+
+# `desflow test` with the variables of a 30-day backfill from 2024-10-01
+# (tests/feature/test_model.py): the rows of each table. A row outside its bounds fails
+# the run, and with it the test
+tests:
+  - name: a 30-day backfill
+    expect:
+      tasks.reading.finished: 720
+      tasks.forecast_row.finished: 5040
+      tasks.daily_weather.finished: 210
+      tasks.daily_air_quality.finished: 29

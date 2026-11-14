@@ -1,9 +1,10 @@
 """Loads simulated days into the four Iceberg tables, for a backfill or a daily run.
 
 A run covers `n_days` ending with `until`. With `reset`, or when the tables do not exist
-yet, it recreates the tables, stores the window's first hour and `seed` on them, and
-appends. Otherwise it continues from the stored first hour and seed, and upserts on each
-table's keys, so running a day again replaces it.
+yet, it recreates the tables and stores the window's first hour and `seed` on them.
+Otherwise it reads the stored first hour and seed. It then runs the desflow blueprint
+`model.yaml` from the stored first hour, which writes only the days asked for and upserts
+on each table's keys, so running a day again replaces it.
 
 Run: python -m airq.feature.load --n-days 730 --reset   (backfill)
      python -m airq.feature.load --until today          (one day; default: yesterday)
@@ -11,47 +12,52 @@ Run: python -m airq.feature.load --n-days 730 --reset   (backfill)
 
 import argparse
 import logging
-from collections.abc import Iterator
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 
-from pydantic import BaseModel
+from desflow import SimulationContext
 
 from airq.core import days
 from airq.core.config import DEFAULT_SEED, ORIGIN_PROPERTY, SEED_PROPERTY, TABLES
 from airq.core.models import Observation
-from airq.feature.generator import generate
-from airq.feature.simulation import simulate
 from airq.stores.iceberg import catalog, recreate_tables
 
 logger = logging.getLogger(
     "airq.feature.load"
 )  # __name__ is "__main__" under python -m
 
+BLUEPRINT = Path(__file__).with_name("model.yaml")
+_FORECAST_HOURS = 7 * 24  # a forecast is written at the hour it is for
 
-def advance(records: Iterator[list[BaseModel]], start: datetime) -> list[Observation]:
+
+def variables(
+    origin: datetime, start: datetime, n_days: int, seed: int
+) -> dict[str, str]:
     """
-    Moves the generator up to `start`, and returns the readings of the day before.
+    Returns the values of the variables the blueprint reads, for one run.
 
-    The generator must run from the stored first hour to reproduce the same values. The
-    readings of the day before are kept, because the first day's air quality row needs
-    the previous day's mean.
+    A run always simulates from the stored first hour with the stored seed, so a day
+    gets the same values in the backfill and in a daily run. The hours before `start`
+    are the warm-up, which desflow simulates but does not write.
 
     Args:
-        records (Iterator[list[BaseModel]]): The generator's hourly rows, from the first
-            hour.
+        origin (datetime): The stored first hour, in UTC.
         start (datetime): The first hour to load, in UTC.
+        n_days (int): How many days to load.
+        seed (int): The seed for the generated values.
 
     Returns:
-        list[Observation]: The readings of the 24 hours before `start`.
+        dict[str, str]: START, SEED, HOURS, RUN_HOURS and WARMUP_HOURS, by name.
     """
-    previous: list[Observation] = []
-    for rows in records:
-        reading = rows[-1]
-        if reading.measured_at >= start - timedelta(days=1):
-            previous.append(reading)
-        if reading.measured_at >= start - timedelta(hours=1):
-            break
-    return previous
+    warmup = int((start - origin).total_seconds()) // 3600
+    hours = warmup + n_days * 24
+    return {
+        "START": origin.isoformat(),
+        "SEED": str(seed),
+        "HOURS": str(hours),
+        "RUN_HOURS": str(hours + _FORECAST_HOURS),
+        "WARMUP_HOURS": str(warmup),
+    }
 
 
 def load(
@@ -92,9 +98,10 @@ def load(
             )
         seed = int(properties[SEED_PROPERTY]) if seed is None else seed
 
-    records = generate(origin, seed)
-    previous = advance(records, start) if start > origin else []
-    simulate(cat, records, start, n_days * 24, upsert=not reset, previous=previous)
+    app = SimulationContext.from_yaml(
+        BLUEPRINT, variables=variables(origin, start, n_days, seed)
+    )
+    app.run()
     for identifier in TABLES.values():
         logger.info(
             "%s: %d rows", identifier, cat.load_table(identifier).scan().count()

@@ -1,4 +1,4 @@
-desflow[iceberg]>=0.20.0
+desflow[iceberg] @ git+https://github.com/jaehyeon-kim/desflow@release-1.0.0-final
 dateparser==1.4.3
 odctl>=1.0,<2
 awscli==1.46.1

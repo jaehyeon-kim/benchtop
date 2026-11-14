@@ -5,8 +5,9 @@
   backfill. Each run marks the daily features asset as updated, which starts
   airq_inference for the last day loaded.
 
-The `airq` package is uploaded next to this file. `_AIRFLOW_PIP_DEPS` installs
-desflow in the Airflow container.
+The `airq` package, with the desflow blueprint `airq/feature/model.yaml` that the load
+runs, is uploaded next to this file. `_AIRFLOW_PIP_DEPS` installs desflow in the
+Airflow container.
 """
 
 from datetime import UTC, datetime, timedelta
